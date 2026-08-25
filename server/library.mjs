@@ -41,6 +41,9 @@ const EFFECT_RULES = [
     ['Цепи', 'chains.webp', ['chain']],
     ['Призрачный шёпот', 'ghost-whispers.webp', ['ghost', 'whisper']]
   ]],
+  ['ambience', 'Эмбиенс', 'journey.webp', [
+    ['Эмбиенс', 'journey.webp', ['ambience', 'ambient', 'atmosphere', 'background']]
+  ]],
   ['creatures', 'Существа', 'monsters.jpg', [
     ['Рёв дракона', 'dragon-roar.webp', ['dragon roar']],
     ['Полёт дракона', 'dragon-flight.webp', ['dragon flight']],

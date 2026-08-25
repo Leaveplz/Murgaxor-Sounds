@@ -17,6 +17,7 @@ const fallbackSections = [
   { id: 'battle', name: 'Бой', image: 'battle.webp' },
   { id: 'town', name: 'Город', image: 'city.webp' },
   { id: 'dungeon', name: 'Подземелье', image: 'dungeon.webp' },
+  { id: 'ambience', name: 'Эмбиенс', image: 'journey.webp' },
   { id: 'creatures', name: 'Существа', image: 'monsters.jpg' },
   { id: 'effects', name: 'Эффекты', image: 'situations.jpg' }
 ];
@@ -136,6 +137,7 @@ const elements = {
   themeEditImagePreview: $('#theme-edit-image-preview'),
   themeEditCoverFile: $('#theme-edit-cover-file'),
   themeEditCoverButton: $('#theme-edit-cover-button'),
+  themeMusicSearch: $('#theme-music-search'),
   themeMusicSource: $('#theme-music-source'),
   themePlaylistTracks: $('#theme-playlist-tracks'),
   themeTrackAdd: $('#theme-track-add'),
@@ -348,6 +350,23 @@ function resetDiscordMusicClock() {
   state.discordMusicStartedAt = 0;
 }
 
+function currentDiscordSoundOffset(item) {
+  if (!item || item.audio || !isDiscordOutput()) return 0;
+  const elapsed = item.startedAt
+    ? (Date.now() - item.startedAt) / 1000
+    : 0;
+  const rawOffset = Math.max(0, Number(item.offset || 0) + elapsed);
+  const duration = Number(item.duration || 0);
+  if (item.loop && duration > 0) return rawOffset % duration;
+  return rawOffset;
+}
+
+function startDiscordSoundClock(item, offset = 0) {
+  if (!item) return;
+  item.offset = Math.max(0, Number(offset) || 0);
+  item.startedAt = Date.now();
+}
+
 function clearSoundEndTimer(item) {
   if (item?.endTimer) clearTimeout(item.endTimer);
   if (item) item.endTimer = null;
@@ -374,10 +393,12 @@ async function scheduleDiscordSoundStop(id) {
   const duration = await mediaDuration(id);
   const current = state.activeSounds.get(id);
   if (!current || current.loop || current.audio || duration <= 0) return;
+  current.duration = duration;
+  const remaining = Math.max(0, duration - currentDiscordSoundOffset(current));
   current.endTimer = setTimeout(() => {
     const latest = state.activeSounds.get(id);
     if (latest && !latest.loop && !latest.audio) stopSound(id);
-  }, Math.ceil(duration * 1000) + 300);
+  }, Math.ceil(remaining * 1000) + 300);
 }
 
 async function setOutputMode(mode) {
@@ -387,6 +408,10 @@ async function setOutputMode(mode) {
   const localMusicOffset = state.currentMusic ? state.musicAudio.currentTime || 0 : 0;
   state.musicAudio.pause();
   state.activeSounds.forEach((item) => {
+    if (item.audio) {
+      item.offset = item.audio.currentTime || 0;
+      item.startedAt = Date.now();
+    }
     item.audio?.pause();
     if (item.audio) item.audio.currentTime = 0;
     clearSoundEndTimer(item);
@@ -421,6 +446,11 @@ async function syncDiscordMix({ announce = false } = {}) {
   if (!isDiscordOutput()) return;
   const musicOffset = currentDiscordMusicOffset();
   const tracks = discordMixTracks();
+  const soundOffsets = new Map(
+    tracks
+      .filter((track) => track.role === 'sound' && track.id)
+      .map((track) => [track.id, track.seek || 0])
+  );
 
   if (!tracks.length) {
     resetDiscordMusicClock();
@@ -434,6 +464,13 @@ async function syncDiscordMix({ announce = false } = {}) {
     body: JSON.stringify({ tracks })
   });
   if (state.currentMusic || state.currentExternalMusic) startDiscordMusicClock(musicOffset);
+  soundOffsets.forEach((offset, id) => {
+    startDiscordSoundClock(state.activeSounds.get(id), offset);
+  });
+  soundOffsets.forEach((_, id) => {
+    const item = state.activeSounds.get(id);
+    if (item && !item.loop) scheduleDiscordSoundStop(id).catch(() => {});
+  });
   await refreshDiscordStatus();
   if (announce) showToast('Микс отправлен в Discord');
 }
@@ -468,9 +505,11 @@ function discordMixTracks() {
   }
   const soundTracks = [...state.activeSounds.values()].map((item) => ({
     type: 'local',
+    role: 'sound',
     id: item.sound.id,
     volume: item.volume * state.masterVolume,
-    loop: item.loop
+    loop: item.loop,
+    seek: currentDiscordSoundOffset(item)
   }));
   return [...musicTrack, ...soundTracks];
 }
@@ -489,7 +528,7 @@ async function startSound(id, options = {}) {
   const volume = Number(localStorage.getItem(`leaveplz-volume-${id}`) || options.volume || 0.5);
   const loop = options.loop ?? state.loopOverrides[id] ?? state.loopByDefault;
   if (isDiscordOutput()) {
-    state.activeSounds.set(id, { sound, audio: null, volume, loop, endTimer: null });
+    state.activeSounds.set(id, { sound, audio: null, volume, loop, endTimer: null, offset: 0, startedAt: 0, duration: 0 });
     renderSounds();
     await syncDiscordMix();
     if (!loop) scheduleDiscordSoundStop(id).catch(() => {});
@@ -500,7 +539,7 @@ async function startSound(id, options = {}) {
   audio.loop = loop;
   audio.volume = volume * state.masterVolume;
 
-  state.activeSounds.set(id, { sound, audio, volume, loop, endTimer: null });
+  state.activeSounds.set(id, { sound, audio, volume, loop, endTimer: null, offset: 0, startedAt: 0, duration: 0 });
   audio.addEventListener('ended', () => stopSound(id));
   await audio.play();
   renderSounds();
@@ -903,11 +942,17 @@ function themeTrackIds() {
 
 function renderThemePlaylistEditor() {
   const selectedIds = new Set(themeTrackIds());
-  elements.themeMusicSource.innerHTML = state.music.map((track) => {
+  const query = normalize(elements.themeMusicSearch.value);
+  const tracks = state.music.filter((track) => {
+    if (!query) return true;
+    const themeName = themes.find((item) => item.id === track.themeId)?.name || 'Без темы';
+    return normalize(`${track.title} ${track.originalTitle || ''} ${track.file || ''} ${themeName}`).includes(query);
+  });
+  elements.themeMusicSource.innerHTML = tracks.map((track) => {
     const themeName = themes.find((item) => item.id === track.themeId)?.name || 'Без темы';
     const selectedMark = selectedIds.has(track.id) ? '✓ ' : '';
     return `<option value="${track.id}">${selectedMark}${escapeHtml(track.title)} · ${escapeHtml(themeName)}</option>`;
-  }).join('');
+  }).join('') || '<option value="">Ничего не найдено</option>';
 }
 
 function populateThemeEditor() {
@@ -1318,6 +1363,7 @@ elements.themeEditCoverButton.addEventListener('click', () => uploadCoverImage(e
   elements.adminStatus.textContent = error.message;
   showToast(error.message);
 }));
+elements.themeMusicSearch.addEventListener('input', renderThemePlaylistEditor);
 elements.themeTrackAdd.addEventListener('click', addTrackToThemePlaylist);
 elements.themeTrackRemove.addEventListener('click', removeTrackFromThemePlaylist);
 elements.themeTrackUp.addEventListener('click', () => moveThemeTrack(-1));
