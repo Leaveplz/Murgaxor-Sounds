@@ -40,6 +40,7 @@ const state = {
   favoriteIds: new Set(JSON.parse(localStorage.getItem('leaveplz-favorites') || '[]')),
   collapsedSections: new Set(JSON.parse(localStorage.getItem('leaveplz-collapsed-sections') || '[]')),
   loopOverrides: JSON.parse(localStorage.getItem('leaveplz-loop-overrides') || '{}'),
+  sectionLoopDefaults: JSON.parse(localStorage.getItem('leaveplz-section-loop-defaults') || '{}'),
   loopByDefault: true,
   playlistIndex: 0,
   previewImages: [],
@@ -50,7 +51,6 @@ const $ = (selector) => document.querySelector(selector);
 
 const elements = {
   themeGrid: $('#theme-grid'),
-  backgroundList: $('#background-list'),
   selectedThemeLabel: $('#selected-theme-label'),
   soundsContainer: $('#sounds-container'),
   searchInput: $('#search-input'),
@@ -58,7 +58,6 @@ const elements = {
   pauseAll: $('#pause-all'),
   stopAll: $('#stop-all'),
   saveSettings: $('#save-settings'),
-  resetBackground: $('#reset-background'),
   masterVolume: $('#master-volume'),
   masterVolumeLabel: $('#master-volume-label'),
   musicVolume: $('#music-volume'),
@@ -145,6 +144,7 @@ const elements = {
   themeTrackUp: $('#theme-track-up'),
   themeTrackDown: $('#theme-track-down'),
   adminSaveTheme: $('#admin-save-theme'),
+  adminDeleteTheme: $('#admin-delete-theme'),
   adminStatus: $('#admin-status'),
   toast: $('#toast')
 };
@@ -207,15 +207,24 @@ function currentTracks() {
   return themeMusic().slice(0, 99).map((track) => ({ type: 'local', id: track.id, title: track.title, themeId: track.themeId, candidate: true }));
 }
 
+function baseLoopForSound(sound) {
+  const sectionId = sound?.sectionId || 'effects';
+  return state.sectionLoopDefaults[sectionId] ?? state.loopByDefault;
+}
+
+function defaultLoopForSound(sound) {
+  return state.loopOverrides[sound.id] ?? baseLoopForSound(sound);
+}
+
+function sectionLoopDefault(sectionId) {
+  return state.sectionLoopDefaults[sectionId] ?? state.loopByDefault;
+}
+
 function renderThemes() {
   elements.themeGrid.innerHTML = themes.map((item) => `
     <button class="theme-card ${item.id === state.selectedTheme ? 'active' : ''}" type="button" data-theme="${item.id}" style="--image: ${cssImage(item.image)}">
       <span>${escapeHtml(item.name)}</span>
     </button>
-  `).join('');
-
-  elements.backgroundList.innerHTML = themes.map((item) => `
-    <button class="bg-option ${item.id === state.selectedTheme ? 'active' : ''}" type="button" data-theme="${item.id}" style="--image: ${cssImage(item.image)}" title="${escapeHtml(item.name)}" aria-label="${escapeHtml(item.name)}"></button>
   `).join('');
 }
 
@@ -249,17 +258,22 @@ function renderSounds() {
 
 function renderSection(section, sounds) {
   const collapsed = state.collapsedSections.has(section.id);
+  const loopDefault = sectionLoopDefault(section.id);
   return `
     <article class="sound-section" data-section="${section.id}">
-      <button class="section-title" type="button" data-section-toggle="${section.id}">
-        <span class="title-left">
-          <img src="${asset(section.image)}" alt="">
-          <strong>${escapeHtml(section.name)}</strong>
-          <small>(${sounds.length})</small>
-          <span class="loop-badge">Автоповтор включён</span>
-        </span>
-        <span>${collapsed ? '▶' : '▼'}</span>
-      </button>
+      <div class="section-title">
+        <button class="section-title-main" type="button" data-section-toggle="${section.id}">
+          <span class="title-left">
+            <img src="${asset(section.image)}" alt="">
+            <strong>${escapeHtml(section.name)}</strong>
+            <small>(${sounds.length})</small>
+          </span>
+          <span>${collapsed ? '▶' : '▼'}</span>
+        </button>
+        <button class="loop-badge ${loopDefault ? 'active' : ''}" type="button" data-section-loop="${section.id}" aria-pressed="${loopDefault}">
+          ${loopDefault ? 'Автоповтор включён' : 'Автоповтор выключен'}
+        </button>
+      </div>
       ${collapsed ? '' : `<div class="sound-grid">${sounds.map(renderSoundCard).join('')}</div>`}
     </article>
   `;
@@ -268,7 +282,7 @@ function renderSection(section, sounds) {
 function renderSoundCard(sound) {
   const active = state.activeSounds.get(sound.id);
   const volume = active?.volume ?? Number(localStorage.getItem(`leaveplz-volume-${sound.id}`) || 0.5);
-  const loop = active?.loop ?? state.loopOverrides[sound.id] ?? state.loopByDefault;
+  const loop = active?.loop ?? defaultLoopForSound(sound);
   const favorite = state.favoriteIds.has(sound.id);
   const image = sound.image || state.sections.find((section) => section.id === sound.sectionId)?.image || 'situations.jpg';
 
@@ -526,7 +540,7 @@ async function startSound(id, options = {}) {
   if (existing) stopSound(id);
 
   const volume = Number(localStorage.getItem(`leaveplz-volume-${id}`) || options.volume || 0.5);
-  const loop = options.loop ?? state.loopOverrides[id] ?? state.loopByDefault;
+  const loop = options.loop ?? defaultLoopForSound(sound);
   if (isDiscordOutput()) {
     state.activeSounds.set(id, { sound, audio: null, volume, loop, endTimer: null, offset: 0, startedAt: 0, duration: 0 });
     renderSounds();
@@ -577,10 +591,19 @@ function toggleLoop(id) {
       queueDiscordMixSync();
     }
   } else {
-    state.loopOverrides[id] = !(state.loopOverrides[id] ?? state.loopByDefault);
+    const sound = state.sounds.find((soundItem) => soundItem.id === id);
+    state.loopOverrides[id] = !(state.loopOverrides[id] ?? baseLoopForSound(sound));
     localStorage.setItem('leaveplz-loop-overrides', JSON.stringify(state.loopOverrides));
   }
   renderSounds();
+}
+
+function toggleSectionLoopDefault(sectionId) {
+  const nextValue = !sectionLoopDefault(sectionId);
+  state.sectionLoopDefaults[sectionId] = nextValue;
+  localStorage.setItem('leaveplz-section-loop-defaults', JSON.stringify(state.sectionLoopDefaults));
+  renderSounds();
+  showToast(nextValue ? 'Автоповтор категории включён' : 'Автоповтор категории выключен');
 }
 
 function pauseAllSounds() {
@@ -736,6 +759,7 @@ function saveSettings() {
   localStorage.setItem('leaveplz-favorites', JSON.stringify([...state.favoriteIds]));
   localStorage.setItem('leaveplz-collapsed-sections', JSON.stringify([...state.collapsedSections]));
   localStorage.setItem('leaveplz-loop-overrides', JSON.stringify(state.loopOverrides));
+  localStorage.setItem('leaveplz-section-loop-defaults', JSON.stringify(state.sectionLoopDefaults));
   showToast('Настройки сохранены');
 }
 
@@ -1023,6 +1047,29 @@ async function saveEditedTheme() {
   showToast('Тема обновлена');
 }
 
+async function deleteEditedTheme() {
+  const current = selectedThemeForEdit();
+  if (!current) {
+    showToast('Выбери тему');
+    return;
+  }
+
+  if (!confirm(`Удалить тему "${current.name}"? Плейлист темы будет удалён, но сами треки останутся.`)) return;
+
+  elements.adminStatus.textContent = 'Удаление темы...';
+  await api(`/api/admin/themes/${encodeURIComponent(current.id)}`, {
+    method: 'DELETE',
+    headers: { 'x-admin-password': state.adminPassword }
+  });
+  await loadThemes();
+  if (state.selectedTheme === current.id) state.selectedTheme = themes.find((item) => item.id === 'tavern')?.id || themes[0]?.id || 'tavern';
+  applyTheme();
+  restoreSelectValue(elements.themeEditSelect, state.selectedTheme);
+  populateThemeEditor();
+  elements.adminStatus.textContent = 'Тема удалена';
+  showToast('Тема удалена, треки остались в медиатеке');
+}
+
 function allMedia() {
   return [...state.sounds, ...state.music].sort((a, b) => a.title.localeCompare(b.title, 'ru'));
 }
@@ -1154,24 +1201,18 @@ elements.themeGrid.addEventListener('click', (event) => {
   applyTheme();
 });
 
-elements.backgroundList.addEventListener('click', (event) => {
-  const button = event.target.closest('[data-theme]');
-  if (!button) return;
-  state.selectedTheme = button.dataset.theme;
-  applyTheme();
-});
-
-elements.resetBackground.addEventListener('click', () => {
-  state.selectedTheme = 'tavern';
-  applyTheme();
-});
-
 elements.searchInput.addEventListener('input', (event) => {
   state.search = event.target.value;
   renderSounds();
 });
 
 elements.soundsContainer.addEventListener('click', async (event) => {
+  const sectionLoop = event.target.closest('[data-section-loop]');
+  if (sectionLoop) {
+    toggleSectionLoopDefault(sectionLoop.dataset.sectionLoop);
+    return;
+  }
+
   const sectionToggle = event.target.closest('[data-section-toggle]');
   if (sectionToggle) {
     const id = sectionToggle.dataset.sectionToggle;
@@ -1369,6 +1410,10 @@ elements.themeTrackRemove.addEventListener('click', removeTrackFromThemePlaylist
 elements.themeTrackUp.addEventListener('click', () => moveThemeTrack(-1));
 elements.themeTrackDown.addEventListener('click', () => moveThemeTrack(1));
 elements.adminSaveTheme.addEventListener('click', () => saveEditedTheme().catch((error) => {
+  elements.adminStatus.textContent = error.message;
+  showToast(error.message);
+}));
+elements.adminDeleteTheme.addEventListener('click', () => deleteEditedTheme().catch((error) => {
   elements.adminStatus.textContent = error.message;
   showToast(error.message);
 }));

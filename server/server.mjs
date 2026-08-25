@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { mergeUploadedMedia, readArchive, resolveMediaPath, sectionDefinitions, splitMedia } from './library.mjs';
 import { applyOverrides, loadOverrides, saveOverrides } from './mediaOverrides.mjs';
 import { loadPlaylists, makePlaylist, savePlaylists } from './playlists.mjs';
-import { createTheme, loadThemes, updateTheme } from './themes.mjs';
+import { createTheme, deleteTheme, loadThemes, updateTheme } from './themes.mjs';
 import { loadUploads, parseMultipart, partsToForm, safeAudioFileName, safeImageFileName, saveUploads, uploadToMedia } from './uploads.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -97,6 +97,12 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const theme = await updateTheme(themesFile, adminThemeMatch[1], body);
       return json(res, theme);
+    }
+
+    if (adminThemeMatch && req.method === 'DELETE') {
+      assertAdmin(req);
+      const result = await deleteTheme(themesFile, adminThemeMatch[1]);
+      return json(res, result);
     }
 
     if (req.method === 'POST' && pathname === '/api/admin/assets/images') {

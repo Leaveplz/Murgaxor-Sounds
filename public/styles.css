@@ -333,19 +333,31 @@ input[type="range"] {
 .section-title {
   width: 100%;
   min-height: 44px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.section-title-main {
+  min-width: 0;
+  min-height: 28px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 8px 12px;
+  padding: 0;
   border: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 0;
-  background: rgba(255, 255, 255, 0.04);
+  background: transparent;
   text-align: left;
 }
 
-.section-title .title-left {
+.section-title .title-left,
+.section-title-main .title-left {
   display: flex;
   align-items: center;
   min-width: 0;
@@ -371,13 +383,19 @@ input[type="range"] {
 }
 
 .loop-badge {
-  margin-left: 6px;
   padding: 3px 9px;
   border: 1px solid rgba(232, 179, 95, 0.34);
   border-radius: 999px;
   color: var(--gold);
   background: rgba(232, 179, 95, 0.12);
   font-size: 12px;
+  white-space: nowrap;
+}
+
+.loop-badge.active {
+  color: #ffd8bd;
+  border-color: rgba(232, 179, 95, 0.58);
+  background: rgba(232, 179, 95, 0.2);
 }
 
 .sound-grid {
@@ -610,7 +628,6 @@ input[type="range"] {
   font-size: 13px;
 }
 
-.background-picker,
 .playlist-box,
 .discord-box {
   margin: 0 14px 12px;
@@ -637,27 +654,6 @@ input[type="range"] {
 .side-title button {
   color: var(--muted);
   font-size: 12px;
-}
-
-.background-list {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 7px;
-}
-
-.bg-option {
-  position: relative;
-  height: 48px;
-  overflow: hidden;
-  border-radius: 8px;
-  background-image: var(--image);
-  background-size: cover;
-  background-position: center;
-}
-
-.bg-option.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .playlist-actions,

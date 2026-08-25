@@ -93,6 +93,25 @@ export async function updateTheme(filePath, themeId, { name, image, tracks } = {
   return next;
 }
 
+export async function deleteTheme(filePath, themeId) {
+  if (defaultThemeIds.has(themeId)) {
+    const error = new Error('Стандартную тему удалить нельзя.');
+    error.status = 400;
+    throw error;
+  }
+
+  const custom = await loadCustomThemes(filePath);
+  const next = custom.filter((theme) => theme.id !== themeId);
+  if (next.length === custom.length) {
+    const error = new Error('Тема не найдена.');
+    error.status = 404;
+    throw error;
+  }
+
+  await saveCustomThemes(filePath, next);
+  return { ok: true, id: themeId };
+}
+
 function slugify(value) {
   return String(value)
     .normalize('NFKD')

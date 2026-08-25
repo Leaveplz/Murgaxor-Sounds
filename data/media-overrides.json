@@ -2,11 +2,11 @@
   "YXJjaGl2ZTpiYXItcHViLWNyb3dkLWVudmlyb25tZW50YWwtc291bmRzX29wdGltaXplZC5tcDM": {
     "title": "Шум в баре",
     "type": "sound",
-    "sectionId": "town",
-    "sectionName": "Город",
+    "sectionId": "ambience",
+    "sectionName": "Эмбиенс",
     "themeId": null,
     "image": "tavern-hum.webp",
-    "editedAt": "2026-08-24T23:58:49.475Z"
+    "editedAt": "2026-08-25T13:01:31.305Z"
   },
   "YXJjaGl2ZTp0aGUtc291bmQtb2YtYS1kcmlwcGluZy1jYXZlX19tcDNjdXRfbmV0X19vcHRpbWl6ZWQubXAz": {
     "title": "Капли воды в пещере",
@@ -61,5 +61,14 @@
     "themeId": null,
     "image": "frogs.webp",
     "editedAt": "2026-08-25T12:35:29.080Z"
+  },
+  "dXBsb2FkOnNvdW5kcy8xNzg3NjU5ODQyNTI4LTY2ZTk3ZGY2LUJhY2stQWxsZXktQW1iaWVuY2UtQVNNUi1CYXItc3RyZWV0LWF0LW5pZ2h0LW5lb24tbGlnaHRzLWRpc3RhbnQtbXVzaWMtcGVvcGxlLXRyLm1wMw": {
+    "title": "Улица у клуба",
+    "type": "sound",
+    "sectionId": "ambience",
+    "sectionName": "Эмбиенс",
+    "themeId": null,
+    "image": "uploads/images/1787659831345-dea51b2b-de55f641a14744607ef114714f9f3ee3.jpg",
+    "editedAt": "2026-08-25T13:01:50.843Z"
   }
 }
