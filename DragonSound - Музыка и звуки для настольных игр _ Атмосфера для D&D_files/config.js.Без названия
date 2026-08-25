@@ -1,0 +1,103 @@
+const defaultConfig = {
+    
+    categories: [
+        { id: 'battle', name: 'Битва', icon: '⚔️' },
+        { id: 'boss', name: 'Эпическая битва', icon: '👹' },
+        { id: 'dungeon', name: 'Подземелье', icon: '🕳️' },
+        { id: 'graveyard', name: 'Кладбище', icon: '🪦' },
+        { id: 'mystery', name: 'Таинственное', icon: '🔮' },
+        { id: 'city', name: 'Город', icon: '🏰' },
+        { id: 'tavern', name: 'Таверна', icon: '🍺' },
+        { id: 'sewers', name: 'Канализация', icon: '🐀' },
+        { id: 'forest', name: 'Лес', icon: '🌲' },
+        { id: 'ocean', name: 'Океан', icon: '🌊' },
+        { id: 'mountain', name: 'Горы', icon: '⛰️' },
+        { id: 'desert', name: 'Пустыня', icon: '🏜️' },
+        { id: 'swamp', name: 'Болото', icon: '💀' },
+        { id: 'camp', name: 'Лагерь', icon: '🏕️' },
+        { id: 'cave', name: 'Пещера', icon: '🦇' },
+        { id: 'ship', name: 'Корабль', icon: '⛵' },
+        { id: 'underwater', name: 'Под водой', icon: '🐠' },
+        { id: 'castle', name: 'Замок', icon: '🏯' }
+    ],
+    
+    sounds: {
+        nature: {
+            title: 'Природа',
+            icon: '🌿',
+            items: [
+                { name: 'Дождь', icon: '🌧', file: 'sounds/nature/rain.mp3' },
+                { name: 'Гроза', icon: '⛈', file: 'sounds/nature/thunder.mp3' },
+                { name: 'Ветер', icon: '💨', file: 'sounds/nature/wind.mp3' },
+                { name: 'Птицы', icon: '🐦', file: 'sounds/nature/birds.mp3' },
+                { name: 'Сверчки', icon: '🦗', file: 'sounds/nature/crickets.mp3' },
+                { name: 'Огонь', icon: '🔥', file: 'sounds/nature/fire.mp3' },
+                { name: 'Волки', icon: '🐺', file: 'sounds/nature/wolves.mp3' }
+            ]
+        },
+        water: {
+            title: 'Вода',
+            icon: '💧',
+            items: [
+                { name: 'Океан', icon: '🌊', file: 'sounds/water/ocean.mp3' },
+                { name: 'Река', icon: '🏞', file: 'sounds/water/river.mp3' },
+                { name: 'Капли', icon: '💧', file: 'sounds/water/dripping.mp3' }
+            ]
+        },
+        city: {
+            title: 'Город',
+            icon: '🏙',
+            items: [
+                { name: 'Толпа', icon: '👥', file: 'sounds/city/crowd.mp3' },
+                { name: 'Рынок', icon: '🏪', file: 'sounds/city/market.mp3' },
+                { name: 'Кузнец', icon: '⚒', file: 'sounds/city/blacksmith.mp3' },
+                { name: 'Колокола', icon: '🔔', file: 'sounds/city/bells.mp3' }
+            ]
+        },
+        dungeon: {
+            title: 'Подземелье',
+            icon: '🕳',
+            items: [
+                { name: 'Цепи', icon: '⛓', file: 'sounds/dungeon/chains.mp3' },
+                { name: 'Камни', icon: '🪨', file: 'sounds/dungeon/rocks.mp3' },
+                { name: 'Шаги', icon: '👣', file: 'sounds/dungeon/footsteps.mp3' }
+            ]
+        },
+        atmosphere: {
+            title: 'Атмосфера',
+            icon: '👻',
+            items: [
+                { name: 'Шёпот', icon: '🗣', file: 'sounds/atmosphere/whispers.mp3' },
+                { name: 'Сердцебиение', icon: '💓', file: 'sounds/atmosphere/heartbeat.mp3' },
+                { name: 'Гул', icon: '🔊', file: 'sounds/atmosphere/eerie.mp3' }
+            ]
+        },
+        battle: {
+            title: 'Сражение',
+            icon: '⚔',
+            items: [
+                { name: 'Мечи', icon: '🗡', file: 'sounds/battle/swords.mp3' },
+                { name: 'Крики', icon: '😱', file: 'sounds/battle/cries.mp3' },
+                { name: 'Барабаны', icon: '🥁', file: 'sounds/battle/drums.mp3' }
+            ]
+        }
+    },
+    
+    music: {
+        battle: [
+            { title: 'Эпическая битва', file: 'music/battle/epic_battle.mp3' },
+            { title: 'Марш орков', file: 'music/battle/orc_march.mp3' }
+        ],
+        tavern: [
+            { title: 'Весёлая таверна', file: 'music/tavern/tavern_01.mp3' },
+            { title: 'Песнь барда', file: 'music/tavern/bard_song.mp3' }
+        ],
+        forest: [
+            { title: 'Шёпот леса', file: 'music/forest/forest_01.mp3' },
+            { title: 'Эльфийская мелодия', file: 'music/forest/elven.mp3' }
+        ],
+        dungeon: [
+            { title: 'Тьма подземелья', file: 'music/dungeon/dark_dungeon.mp3' }
+        ]
+    }
+};

@@ -1,0 +1,19 @@
+{
+  "name": "murgaxor-sounds",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local soundboard and Discord music bot controller for tabletop sessions.",
+  "scripts": {
+    "start": "node server/server.mjs",
+    "dev": "node server/server.mjs",
+    "discord:invite": "node scripts/discord-invite.mjs"
+  },
+  "dependencies": {
+    "@discordjs/voice": "^0.19.2",
+    "@noble/ciphers": "^2.3.0",
+    "discord.js": "^14.16.3",
+    "ffmpeg-static": "^5.2.0",
+    "play-dl": "^1.9.7"
+  }
+}

@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Murgaxor Sounds</title>
+    <link rel="icon" href="/murgaxor.webp" type="image/webp">
+    <link rel="apple-touch-icon" href="/murgaxor.webp">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body class="has-custom-bg">
+    <div class="app">
+      <header class="header">
+        <div class="auth-buttons" aria-label="Аккаунт">
+          <button id="admin-open" type="button">Админ</button>
+          <button type="button" class="register">Локальная панель</button>
+        </div>
+        <div class="brand-mark">
+          <img src="/murgaxor.webp" alt="Мургаксор">
+          <div>
+            <h1>Murgaxor Sounds</h1>
+            <p>Музыка и звуки для настольных ролевых игр</p>
+          </div>
+        </div>
+      </header>
+
+      <nav class="theme-strip" aria-label="Темы и фон">
+        <div id="theme-grid" class="theme-grid"></div>
+      </nav>
+
+      <main class="main-content">
+        <section class="sounds-panel" aria-label="Звуковые эффекты">
+          <div class="panel-header">
+            <h2>Звуковые эффекты</h2>
+            <div class="panel-controls">
+              <label class="search-box">
+                <span>Поиск</span>
+                <input id="search-input" type="search" placeholder="дождь, битва, таверна...">
+              </label>
+              <button id="save-settings" type="button">Сохранить настройки</button>
+              <span class="active-count">Активных:<strong id="active-count">0</strong></span>
+              <button id="pause-all" type="button">Ⅱ Пауза</button>
+              <button id="stop-all" type="button" class="danger">■ Остановить всё</button>
+            </div>
+          </div>
+          <div id="sounds-container" class="sounds-container"></div>
+        </section>
+
+        <aside class="music-panel" aria-label="Музыка и Discord">
+          <div class="music-header">
+            <h2>Музыка</h2>
+            <span id="selected-theme-label">Таверна</span>
+          </div>
+
+          <div class="source-tabs">
+            <button class="active" type="button" data-source-tab="local">Музыка</button>
+            <button type="button" data-source-tab="youtube">YouTube</button>
+          </div>
+
+          <section id="external-player" class="external-player" hidden>
+            <input id="external-url" type="url" placeholder="YouTube URL">
+            <button id="play-external" type="button">Воспроизвести URL</button>
+          </section>
+
+          <section class="now-playing">
+            <div>
+              <strong id="now-playing-title">Ничего не играет</strong>
+              <span id="now-playing-meta">Выбери звук или трек</span>
+            </div>
+            <button id="main-play-toggle" type="button" aria-label="Пауза или продолжить">▶</button>
+          </section>
+
+          <div class="music-controls">
+            <button id="shuffle-playlist" type="button" title="Перемешать">⤨</button>
+            <button id="prev-track" type="button" title="Назад">◀</button>
+            <button id="play-playlist" type="button" class="round-play" title="Запустить плейлист">▶</button>
+            <button id="next-track" type="button" title="Дальше">▶</button>
+            <button id="repeat-playlist" type="button" title="Повтор">↻</button>
+          </div>
+
+          <label class="master-volume">
+            <span>Общая</span>
+            <input id="master-volume" type="range" min="0" max="1" step="0.01" value="0.8">
+            <strong id="master-volume-label">80%</strong>
+          </label>
+
+          <label class="master-volume music-volume">
+            <span>Музыка</span>
+            <input id="music-volume" type="range" min="0" max="1" step="0.01" value="0.7">
+            <strong id="music-volume-label">70%</strong>
+          </label>
+
+          <section class="background-picker">
+            <div class="side-title">
+              <h3>Фон</h3>
+              <button id="reset-background" type="button">Сброс</button>
+            </div>
+            <div id="background-list" class="background-list"></div>
+          </section>
+
+          <section class="playlist-box">
+            <div class="side-title">
+              <h3>Плейлист</h3>
+              <span id="playlist-count">0 треков</span>
+            </div>
+            <ol id="playlist-tracks" class="playlist-tracks"></ol>
+          </section>
+
+          <section class="discord-box">
+            <div class="side-title">
+              <h3>Discord</h3>
+              <span id="discord-led" class="led"></span>
+            </div>
+            <input id="guild-id" type="text" placeholder="Guild ID">
+            <input id="voice-channel-id" type="text" placeholder="Voice Channel ID">
+            <div class="discord-actions">
+              <button id="discord-connect" type="button">Подключить</button>
+              <button id="discord-mix" type="button">Микс</button>
+              <button id="discord-stop" type="button">Стоп</button>
+              <button id="discord-disconnect" type="button">Отключиться</button>
+            </div>
+            <label class="output-switch">
+              <input id="audio-output-mode" type="checkbox">
+              <span></span>
+              <strong id="output-mode-label">Звук на этом ПК</strong>
+            </label>
+            <p id="discord-status">Проверка статуса...</p>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <dialog id="admin-dialog" class="admin-dialog">
+      <form id="admin-form" class="admin-card" method="dialog">
+        <div class="admin-head">
+          <div>
+            <p>Локальная админ-панель</p>
+            <h2>Загрузка аудио</h2>
+          </div>
+          <button id="admin-close" type="button" aria-label="Закрыть">×</button>
+        </div>
+
+        <label id="admin-password-row">
+          <span>Пароль</span>
+          <input id="admin-password" type="password" placeholder="admin">
+        </label>
+        <button id="admin-login" type="button">Войти</button>
+
+        <div id="admin-upload-fields" class="admin-upload-fields" hidden>
+          <div class="admin-tabs">
+            <button class="active" type="button" data-admin-tab="upload">Загрузить новое</button>
+            <button type="button" data-admin-tab="edit">Редактировать существующее</button>
+            <button type="button" data-admin-tab="themes">Темы и плейлисты</button>
+          </div>
+
+          <section id="admin-upload-tab" class="admin-tab-panel">
+          <section class="theme-admin-box">
+            <h3>Новая тема музыки</h3>
+            <label>
+              <span>Название темы</span>
+              <input id="new-theme-title" type="text" placeholder="Например: Магическая академия">
+            </label>
+            <label>
+              <span>Картинка темы</span>
+              <select id="new-theme-image">
+                <option value="">Автоматически</option>
+              </select>
+            </label>
+            <div id="new-theme-image-preview" class="admin-image-preview" aria-hidden="true"></div>
+            <label>
+              <span>Загрузить свою картинку</span>
+              <input id="new-theme-cover-file" type="file" accept="image/png,image/jpeg,image/webp">
+            </label>
+            <button id="new-theme-cover-upload" type="button">Загрузить обложку темы</button>
+            <button id="admin-create-theme" type="button">Создать тему</button>
+          </section>
+          <label>
+            <span>Файл</span>
+            <input id="upload-file" type="file" accept="audio/*">
+          </label>
+          <label>
+            <span>Название</span>
+            <input id="upload-title" type="text" placeholder="Например: Тайная песня таверны">
+          </label>
+          <label>
+            <span>Тип</span>
+            <select id="upload-type">
+              <option value="sound">Звук / эффект</option>
+              <option value="music">Музыка</option>
+            </select>
+          </label>
+          <label id="upload-section-row">
+            <span>Категория звуков</span>
+            <select id="upload-section">
+              <option value="nature" data-name="Природа" data-image="nature.jpg">Природа</option>
+              <option value="battle" data-name="Бой" data-image="battle.webp">Бой</option>
+              <option value="town" data-name="Город" data-image="city.webp">Город</option>
+              <option value="dungeon" data-name="Подземелье" data-image="dungeon.webp">Подземелье</option>
+              <option value="creatures" data-name="Существа" data-image="monsters.jpg">Существа</option>
+              <option value="effects" data-name="Эффекты" data-image="situations.jpg">Эффекты</option>
+            </select>
+          </label>
+          <label id="upload-theme-row" hidden>
+            <span>Настроение музыки</span>
+            <select id="upload-theme"></select>
+          </label>
+          <label>
+            <span>Превью</span>
+            <select id="upload-image">
+              <option value="">Автоматически</option>
+            </select>
+          </label>
+          <div id="upload-image-preview" class="admin-image-preview" aria-hidden="true"></div>
+          <label>
+            <span>Своя картинка превью</span>
+            <input id="upload-cover-file" type="file" accept="image/png,image/jpeg,image/webp">
+          </label>
+          <button id="upload-cover-button" type="button">Загрузить превью</button>
+          <button id="admin-upload" type="button" class="register">Загрузить</button>
+          </section>
+
+          <section id="admin-edit-tab" class="admin-tab-panel" hidden>
+            <label>
+              <span>Поиск</span>
+              <input id="admin-media-search" type="search" placeholder="Название, файл, категория...">
+            </label>
+            <label>
+              <span>Элемент</span>
+              <select id="admin-media-select" size="8"></select>
+            </label>
+            <label>
+              <span>Название</span>
+              <input id="edit-title" type="text">
+            </label>
+            <label>
+              <span>Тип</span>
+              <select id="edit-type">
+                <option value="sound">Звук / эффект</option>
+                <option value="music">Музыка</option>
+              </select>
+            </label>
+            <label id="edit-section-row">
+              <span>Категория звуков</span>
+              <select id="edit-section">
+                <option value="nature" data-name="Природа" data-image="nature.jpg">Природа</option>
+                <option value="battle" data-name="Бой" data-image="battle.webp">Бой</option>
+                <option value="town" data-name="Город" data-image="city.webp">Город</option>
+                <option value="dungeon" data-name="Подземелье" data-image="dungeon.webp">Подземелье</option>
+                <option value="creatures" data-name="Существа" data-image="monsters.jpg">Существа</option>
+                <option value="effects" data-name="Эффекты" data-image="situations.jpg">Эффекты</option>
+              </select>
+            </label>
+            <label id="edit-theme-row" hidden>
+              <span>Настроение музыки</span>
+              <select id="edit-theme"></select>
+            </label>
+            <label>
+              <span>Превью</span>
+              <select id="edit-image">
+                <option value="">Автоматически</option>
+              </select>
+            </label>
+            <div id="edit-image-preview" class="admin-image-preview" aria-hidden="true"></div>
+            <label>
+              <span>Своя картинка превью</span>
+              <input id="edit-cover-file" type="file" accept="image/png,image/jpeg,image/webp">
+            </label>
+            <button id="edit-cover-button" type="button">Загрузить превью</button>
+            <label>
+              <span>Заменить аудиофайл</span>
+              <input id="edit-file" type="file" accept="audio/*">
+            </label>
+            <p id="edit-current-file"></p>
+            <div class="admin-edit-actions">
+              <button id="admin-save-media" type="button" class="register">Сохранить изменения</button>
+              <button id="admin-delete-media" type="button" class="danger-button">Удалить</button>
+            </div>
+          </section>
+
+          <section id="admin-themes-tab" class="admin-tab-panel" hidden>
+            <label>
+              <span>Тема</span>
+              <select id="theme-edit-select"></select>
+            </label>
+            <label>
+              <span>Название темы</span>
+              <input id="theme-edit-title" type="text">
+            </label>
+            <label>
+              <span>Обложка темы</span>
+              <select id="theme-edit-image">
+                <option value="">Автоматически</option>
+              </select>
+            </label>
+            <div id="theme-edit-image-preview" class="admin-image-preview" aria-hidden="true"></div>
+            <label>
+              <span>Загрузить свою обложку</span>
+              <input id="theme-edit-cover-file" type="file" accept="image/png,image/jpeg,image/webp">
+            </label>
+            <button id="theme-edit-cover-button" type="button">Загрузить обложку</button>
+
+            <div class="theme-playlist-editor">
+              <label>
+                <span>Вся музыка</span>
+                <select id="theme-music-source" size="8"></select>
+              </label>
+              <div class="theme-playlist-actions">
+                <button id="theme-track-add" type="button">Добавить →</button>
+                <button id="theme-track-remove" type="button">← Убрать</button>
+                <button id="theme-track-up" type="button">Выше</button>
+                <button id="theme-track-down" type="button">Ниже</button>
+              </div>
+              <label>
+                <span>Плейлист темы</span>
+                <select id="theme-playlist-tracks" size="8"></select>
+              </label>
+            </div>
+            <button id="admin-save-theme" type="button" class="register">Сохранить тему</button>
+          </section>
+
+          <p id="admin-status"></p>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

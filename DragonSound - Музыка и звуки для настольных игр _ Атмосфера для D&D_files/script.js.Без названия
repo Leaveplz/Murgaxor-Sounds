@@ -1,0 +1,3730 @@
+// script.js - Основной скрипт DragonSound
+
+// Не очищаем localStorage: в нём хранится последняя рабочая копия конфига,
+// необходимая для мгновенного запуска при медленном ответе хостинга.
+
+// Экранирование данных из config_data.json перед вставкой в innerHTML/атрибуты
+// (config.php сохраняет их без валидации, значит это untrusted-контент для рендера)
+function escapeHtml(text) {
+    if (text === undefined || text === null) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// Иконки кнопки "Сохранить настройки" в шапке — раньше состояния (обычное/
+// сохранение/успех/ошибка) переключались через textContent эмодзи; теперь
+// кнопка содержит SVG (единый стиль с остальными иконками шапки), поэтому
+// смену состояния держим в одном месте вместо textContent в 8 местах кода.
+const SAVE_BTN_ICONS = {
+    idle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>',
+    saving: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>',
+    saved: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>',
+    error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>'
+};
+function setHeaderSaveBtnState(btn, state) {
+    if (!btn) return;
+    btn.innerHTML = SAVE_BTN_ICONS[state] || SAVE_BTN_ICONS.idle;
+}
+
+// Избранное и горячие клавиши для звуков доступны только зарегистрированным
+// пользователям — иначе привязки живут только до закрытия вкладки и легко
+// теряются, плюс это ощущается как "своя" фича аккаунта.
+function showAuthRequiredModal(message) {
+    const existing = document.getElementById('authRequiredOverlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'auth-modal-overlay';
+    overlay.id = 'authRequiredOverlay';
+    overlay.innerHTML = `
+        <div class="auth-modal">
+            <button class="auth-modal-close" type="button" aria-label="Закрыть">✕</button>
+            <div class="auth-modal-icon">🔒</div>
+            <h3 class="auth-modal-title">Нужна регистрация</h3>
+            <p class="auth-modal-text">${escapeHtml(message)}</p>
+            <div class="auth-modal-actions">
+                <a href="register.html" class="auth-modal-btn primary">Зарегистрироваться</a>
+                <a href="login.html" class="auth-modal-btn">Войти</a>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('.auth-modal-close').addEventListener('click', close);
+    document.addEventListener('keydown', function escOnce(e) {
+        if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escOnce); }
+    });
+}
+
+let config = null;
+let configLoaded = false;
+let initialRenderComplete = false;
+let currentCategory = 'battle';
+let audioObjects = {};
+let favorites = [];
+let favoriteCardHomes = {}; // soundId -> { parent, nextSibling } — куда вернуть карточку при снятии с избранного
+let musicAudio = new Audio();
+musicAudio.preload = 'none'; // не качаем аудио, пока пользователь не нажал play
+let musicPlaying = false;
+let currentTrackIndex = 0;
+let currentPlaylist = [];
+let selectedMusicFile = '';
+let masterVolume = 0.7;
+let musicVolume = 0.7;
+let shuffleMode = false;
+let repeatMode = false;
+let shuffleOrder = [];
+let soundsPaused = false;
+let pausedSounds = [];
+let playlistCache = {};
+let musicPreloaded = false;
+let preloadTimer = null;
+let hoverPreloadTimer = null;
+let hoverPreloadAudio = null;
+let activityHeartbeatTimer = null;
+let lazyImageObserver = null;
+let requestedBackgroundUrl = '';
+
+function observeLazyImages(root = document) {
+    const images = root.querySelectorAll('img[data-src]:not([data-lazy-ready])');
+    if (!('IntersectionObserver' in window)) {
+        images.forEach(img => { img.src = img.dataset.src; img.dataset.lazyReady = 'true'; });
+        return;
+    }
+    if (!lazyImageObserver) {
+        lazyImageObserver = new IntersectionObserver((entries, observer) => {
+            entries.forEach(entry => {
+                if (!entry.isIntersecting) return;
+                const img = entry.target;
+                img.src = img.dataset.src;
+                img.dataset.lazyReady = 'true';
+                img.removeAttribute('data-src');
+                observer.unobserve(img);
+            });
+        }, { rootMargin: '350px 0px', threshold: 0.01 });
+    }
+    images.forEach(img => lazyImageObserver.observe(img));
+}
+
+function sendActivityHeartbeat() {
+    const token = getSessionToken();
+    if (!token || !isLoggedIn() || document.hidden) return;
+    fetch(`api.php?action=heartbeat&session_token=${encodeURIComponent(token)}&_=${Date.now()}`, {
+        method: 'GET', cache: 'no-store', keepalive: true
+    }).catch(() => {});
+}
+
+function startActivityHeartbeat() {
+    if (activityHeartbeatTimer) clearInterval(activityHeartbeatTimer);
+    sendActivityHeartbeat();
+    activityHeartbeatTimer = setInterval(sendActivityHeartbeat, 90000);
+}
+
+// ============ ОФЛАЙН-КЭШ АУДИО ============
+const AUDIO_CACHE_NAME = 'dragon-sound-audio-v1';
+let audioCacheAbortController = null;
+let audioCacheUIReady = false;
+let audioCacheInspectTimer = null;
+const cachedAudioObjectUrls = new Map();
+const cachedAudioSourcePromises = new Map();
+
+async function getCacheFirstAudioSource(file) {
+    const absoluteUrl = new URL(file, window.location.href).href;
+    if (cachedAudioObjectUrls.has(absoluteUrl)) return cachedAudioObjectUrls.get(absoluteUrl);
+    if (cachedAudioSourcePromises.has(absoluteUrl)) return cachedAudioSourcePromises.get(absoluteUrl);
+    const lookup = (async () => {
+        if (!('caches' in window)) return absoluteUrl;
+        try {
+            const cache = await caches.open(AUDIO_CACHE_NAME);
+            const response = await cache.match(absoluteUrl, { ignoreSearch: true, ignoreVary: true });
+            // Opaque-ответ нельзя преобразовать в Blob — его по-прежнему отдаёт Service Worker.
+            if (!response || response.type === 'opaque') return absoluteUrl;
+            const blob = await response.blob();
+            if (!blob.size) return absoluteUrl;
+            const objectUrl = URL.createObjectURL(blob);
+            cachedAudioObjectUrls.set(absoluteUrl, objectUrl);
+            return objectUrl;
+        } catch (error) {
+            return absoluteUrl;
+        }
+    })();
+    cachedAudioSourcePromises.set(absoluteUrl, lookup);
+    try {
+        return await lookup;
+    } finally {
+        cachedAudioSourcePromises.delete(absoluteUrl);
+    }
+}
+
+async function setCacheFirstAudioSource(audio, file) {
+    if (!audio || !file) return false;
+    const source = await getCacheFirstAudioSource(file);
+    if (audio.src !== source) {
+        audio.src = source;
+        audio.load();
+    }
+    return true;
+}
+
+window.addEventListener('pagehide', () => {
+    cachedAudioObjectUrls.forEach(url => URL.revokeObjectURL(url));
+    cachedAudioObjectUrls.clear();
+});
+
+function getAllAudioUrls() {
+    if (!config) return [];
+    const files = [];
+    Object.values(config.sounds || {}).forEach(group => {
+        (group.items || []).forEach(item => { if (item.file) files.push(item.file); });
+    });
+    Object.values(config.music || {}).forEach(tracks => {
+        (tracks || []).forEach(track => { if (track.file) files.push(track.file); });
+    });
+    return [...new Set(files.map(file => new URL(file, window.location.href).href))];
+}
+
+function formatCacheBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 МБ';
+    const mb = bytes / (1024 * 1024);
+    return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} МБ`;
+}
+
+function setAudioCacheProgress(done, total, bytes, status) {
+    const panel = document.getElementById('audioCachePanel');
+    const progress = document.getElementById('audioCacheProgress');
+    const fill = document.getElementById('audioCacheProgressFill');
+    const count = document.getElementById('audioCacheCount');
+    const size = document.getElementById('audioCacheSize');
+    const statusNode = document.getElementById('audioCacheStatus');
+    const percent = total ? Math.min(100, Math.round(done / total * 100)) : 0;
+    if (fill) fill.style.width = `${percent}%`;
+    if (progress) progress.setAttribute('aria-valuenow', String(percent));
+    if (count) count.textContent = `${done} / ${total} файлов`;
+    if (size) size.textContent = formatCacheBytes(bytes);
+    if (statusNode && status) statusNode.textContent = status;
+    if (panel) panel.classList.toggle('is-complete', total > 0 && done >= total);
+}
+
+async function inspectAudioCache() {
+    const urls = getAllAudioUrls();
+    const panel = document.getElementById('audioCachePanel');
+    if (!('caches' in window)) {
+        if (panel) panel.hidden = false;
+        setAudioCacheProgress(0, urls.length, 0, 'Браузер не поддерживает офлайн-кэш');
+        return;
+    }
+    const cache = await caches.open(AUDIO_CACHE_NAME);
+    const urlSet = new Set(urls);
+    const keys = await cache.keys();
+    const savedKeys = keys.filter(request => urlSet.has(request.url));
+    const saved = savedKeys.length;
+    const sizes = await Promise.all(savedKeys.map(request => cache.match(request).then(response =>
+        response ? Number(response.headers.get('content-length')) || 0 : 0
+    )));
+    const usedBytes = sizes.reduce((sum, size) => sum + size, 0);
+    const status = saved === urls.length && urls.length
+        ? 'Все звуки и треки готовы без повторной загрузки'
+        : saved ? `Сохранено ${saved} из ${urls.length}` : 'Скачайте аудио для быстрого повторного запуска';
+    setAudioCacheProgress(saved, urls.length, usedBytes, status);
+    const isComplete = urls.length > 0 && saved === urls.length;
+    if (panel) {
+        panel.hidden = urls.length === 0 || isComplete;
+        if (panel.hidden) panel.classList.remove('is-open');
+    }
+    const toggle = document.getElementById('audioCacheToggle');
+    if (toggle && panel?.hidden) toggle.setAttribute('aria-expanded', 'false');
+    const clearBtn = document.getElementById('clearAudioCacheBtn');
+    if (clearBtn) clearBtn.hidden = saved === 0;
+}
+
+async function preloadAllAudio() {
+    const button = document.getElementById('preloadAudioBtn');
+    const panel = document.getElementById('audioCachePanel');
+    if (audioCacheAbortController) {
+        audioCacheAbortController.abort();
+        return;
+    }
+    const urls = getAllAudioUrls();
+    if (!urls.length || !('caches' in window)) return;
+
+    audioCacheAbortController = new AbortController();
+    const controller = audioCacheAbortController;
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    if (button) button.textContent = 'Остановить загрузку';
+    if (panel) panel.classList.add('is-loading');
+
+    let completed = 0;
+    let downloadedBytes = 0;
+    let failed = 0;
+    let quotaExceeded = false;
+    const cache = await caches.open(AUDIO_CACHE_NAME);
+    const queue = urls.slice();
+
+    async function downloadNext() {
+        while (queue.length && !controller.signal.aborted) {
+            const url = queue.shift();
+            try {
+                const existing = await cache.match(url);
+                if (!existing) {
+                    const isSameOrigin = new URL(url).origin === window.location.origin;
+                    const request = new Request(url, {
+                        credentials: isSameOrigin ? 'same-origin' : 'omit',
+                        mode: isSameOrigin ? 'same-origin' : 'no-cors'
+                    });
+                    const response = await fetch(request, { cache: 'no-store', signal: controller.signal });
+                    if (!response.ok && response.type !== 'opaque') throw new Error(`HTTP ${response.status}`);
+                    const contentLength = Number(response.headers.get('content-length')) || 0;
+                    await cache.put(request, response.clone());
+                    downloadedBytes += contentLength;
+                }
+            } catch (error) {
+                if (error.name === 'AbortError') break;
+                failed++;
+                if (error.name === 'QuotaExceededError' || String(error).toLowerCase().includes('quota')) {
+                    quotaExceeded = true;
+                    controller.abort();
+                }
+                console.warn('Не удалось сохранить аудиофайл:', url, error);
+            }
+            completed++;
+            setAudioCacheProgress(completed, urls.length, downloadedBytes,
+                failed ? `Загрузка продолжается · ошибок: ${failed}` : 'Сохраняем звуки и треки…');
+        }
+    }
+
+    try {
+        await Promise.all([downloadNext(), downloadNext(), downloadNext()]);
+        if (quotaExceeded) {
+            setAudioCacheProgress(completed - failed, urls.length, downloadedBytes, 'Недостаточно места в памяти браузера');
+        } else if (controller.signal.aborted) {
+            setAudioCacheProgress(completed, urls.length, downloadedBytes, 'Загрузка остановлена — можно продолжить позже');
+        } else if (failed) {
+            setAudioCacheProgress(completed - failed, urls.length, downloadedBytes, `Готово, не удалось скачать: ${failed}`);
+        } else {
+            setAudioCacheProgress(urls.length, urls.length, downloadedBytes, 'Готово — всё аудио сохранено в кэше');
+        }
+    } catch (error) {
+        const quota = error && (error.name === 'QuotaExceededError' || String(error).includes('quota'));
+        setAudioCacheProgress(completed, urls.length, downloadedBytes,
+            quota ? 'Недостаточно места в памяти браузера' : 'Загрузка прервана — попробуйте ещё раз');
+    } finally {
+        audioCacheAbortController = null;
+        if (button) button.textContent = !failed && completed >= urls.length ? 'Аудио уже сохранено' : 'Скачать недостающие';
+        if (panel) panel.classList.remove('is-loading');
+        const clearBtn = document.getElementById('clearAudioCacheBtn');
+        if (clearBtn && completed - failed > 0) clearBtn.hidden = false;
+        await inspectAudioCache().catch(() => {});
+    }
+}
+
+async function clearAudioCache() {
+    if (audioCacheAbortController) audioCacheAbortController.abort();
+    await caches.delete(AUDIO_CACHE_NAME);
+    setAudioCacheProgress(0, getAllAudioUrls().length, 0, 'Кэш аудио очищен');
+    const clearBtn = document.getElementById('clearAudioCacheBtn');
+    if (clearBtn) clearBtn.hidden = true;
+    const panel = document.getElementById('audioCachePanel');
+    if (panel) panel.hidden = false;
+}
+
+function initAudioCacheUI() {
+    if (audioCacheUIReady) {
+        inspectAudioCache().catch(() => {});
+        return;
+    }
+    audioCacheUIReady = true;
+    const panel = document.getElementById('audioCachePanel');
+    const toggle = document.getElementById('audioCacheToggle');
+    // backdrop-filter у шапки создаёт отдельную систему координат для fixed-элементов.
+    // Выносим виджет в body, чтобы он всегда был привязан к окну браузера.
+    if (panel && panel.parentElement !== document.body) document.body.appendChild(panel);
+    toggle?.addEventListener('click', () => {
+        const willOpen = !panel?.classList.contains('is-open');
+        panel?.classList.toggle('is-open', willOpen);
+        toggle.setAttribute('aria-expanded', String(willOpen));
+        toggle.setAttribute('aria-label', willOpen ? 'Закрыть предзагрузку аудио' : 'Открыть предзагрузку аудио');
+    });
+    document.addEventListener('click', event => {
+        if (panel && panel.classList.contains('is-open') && !panel.contains(event.target)) {
+            panel.classList.remove('is-open');
+            toggle?.setAttribute('aria-expanded', 'false');
+        }
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && panel?.classList.contains('is-open')) {
+            panel.classList.remove('is-open');
+            toggle?.setAttribute('aria-expanded', 'false');
+            toggle?.focus();
+        }
+    });
+    document.getElementById('preloadAudioBtn')?.addEventListener('click', preloadAllAudio);
+    document.getElementById('clearAudioCacheBtn')?.addEventListener('click', clearAudioCache);
+    inspectAudioCache().catch(() => {});
+    audioCacheInspectTimer = setInterval(() => inspectAudioCache().catch(() => {}), 60000);
+
+    if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
+        navigator.serviceWorker.register('sw.js?v=20260814-14', { updateViaCache: 'none' }).then(registration => {
+            registration.update().catch(() => {});
+        }).catch(error => {
+            console.warn('Не удалось включить офлайн-воспроизведение:', error);
+        });
+    } else if (window.location.protocol === 'file:') {
+        const status = document.getElementById('audioCacheStatus');
+        if (status) status.textContent = 'Офлайн-кэш работает после загрузки сайта на хостинг';
+    }
+}
+
+// ============ ПОЛЬЗОВАТЕЛЬСКИЕ НАСТРОЙКИ ============
+let userSettings = null;
+let currentUserEmail = null;
+
+// ===== ВСЕ ДАННЫЕ ХРАНЯТСЯ В SESSIONSTORAGE =====
+function getUserData() {
+    try {
+        return JSON.parse(sessionStorage.getItem('dragonSound_user') || '{}');
+    } catch {
+        return {};
+    }
+}
+
+function getSessionToken() {
+    return sessionStorage.getItem('dragonSound_session_token');
+}
+
+function isLoggedIn() {
+    return sessionStorage.getItem('dragonSound_logged_in') === 'true';
+}
+
+// ===== ГОРЯЧИЕ КЛАВИШИ =====
+let keyBindings = {};
+let keyBindingMode = false;
+let bindingTarget = null;
+let keyBindingsLoaded = false;
+let availableKeys = [];
+let keyVolumes = {};
+
+// ===== АВТООБНОВЛЕНИЕ =====
+let lastConfigHash = '';
+let autoUpdateTimer = null;
+let updateNotificationShown = false;
+let sseConnection = null;
+let isSSEConnected = false;
+
+// ============ МАППИНГ РУССКИХ БУКВ НА АНГЛИЙСКИЕ ============
+const rusToEngMap = {
+    'й': 'q', 'ц': 'w', 'у': 'e', 'к': 'r', 'е': 't', 'н': 'y', 'г': 'u', 'ш': 'i', 'щ': 'o', 'з': 'p', 'х': '[', 'ъ': ']',
+    'ф': 'a', 'ы': 's', 'в': 'd', 'а': 'f', 'п': 'g', 'р': 'h', 'о': 'j', 'л': 'k', 'д': 'l', 'ж': ';', 'э': "'",
+    'я': 'z', 'ч': 'x', 'с': 'c', 'м': 'v', 'и': 'b', 'т': 'n', 'ь': 'm', 'б': ',', 'ю': '.', 'ё': '`',
+    'Й': 'Q', 'Ц': 'W', 'У': 'E', 'К': 'R', 'Е': 'T', 'Н': 'Y', 'Г': 'U', 'Ш': 'I', 'Щ': 'O', 'З': 'P', 'Х': '[', 'Ъ': ']',
+    'Ф': 'A', 'Ы': 'S', 'В': 'D', 'А': 'F', 'П': 'G', 'Р': 'H', 'О': 'J', 'Л': 'K', 'Д': 'L', 'Ж': ';', 'Э': "'",
+    'Я': 'Z', 'Ч': 'X', 'С': 'C', 'М': 'V', 'И': 'B', 'Т': 'N', 'Ь': 'M', 'Б': ',', 'Ю': '.', 'Ё': '`'
+};
+
+function normalizeRusKey(key) {
+    if (rusToEngMap[key]) {
+        return rusToEngMap[key];
+    }
+    return key;
+}
+
+function getKeyDisplayName(key) {
+    const normalized = normalizeRusKey(key);
+    const map = {
+        '↑': '↑', '↓': '↓', '←': '←', '→': '→',
+        'ArrowUp': '↑', 'ArrowDown': '↓', 'ArrowLeft': '←', 'ArrowRight': '→',
+        'home': 'Home', 'end': 'End', 'pageup': 'PageUp', 'pagedown': 'PageDown',
+        'insert': 'Insert', 'delete': 'Delete', 'backspace': '⌫', 'tab': 'Tab',
+        'capslock': 'Caps', 'shift': 'Shift', 'ctrl': 'Ctrl', 'alt': 'Alt', 'meta': 'Meta'
+    };
+    if (normalized && normalized.startsWith('F') && normalized.length <= 3 && /^F[1-9][0-2]?$/.test(normalized)) {
+        return normalized;
+    }
+    if (normalized && /^[a-zA-Z0-9]$/.test(normalized)) {
+        return normalized.toUpperCase();
+    }
+    if (normalized === 'esc') return 'Esc';
+    if (normalized === 'space') return 'Пробел';
+    return map[normalized] || normalized;
+}
+
+function isKeyAllowed(key) {
+    const engKey = normalizeRusKey(key);
+    if (/^[a-zA-Z]$/.test(engKey)) return true;
+    if (/^[0-9]$/.test(engKey)) return true;
+    if (['↑', '↓', '←', '→'].includes(engKey)) return true;
+    if (engKey && engKey.startsWith('F') && engKey.length <= 3 && /^F[1-9][0-2]?$/.test(engKey)) return true;
+    return false;
+}
+
+function normalizeKey(key) {
+    const normalized = normalizeRusKey(key);
+    if (normalized === ' ' || normalized === 'space') return 'space';
+    if (normalized === 'Escape' || normalized === 'esc') return 'esc';
+    if (normalized === 'Enter' || normalized === 'enter') return 'enter';
+    if (normalized === 'Backspace' || normalized === 'backspace') return 'backspace';
+    if (normalized === 'Tab' || normalized === 'tab') return 'tab';
+    if (normalized === 'CapsLock' || normalized === 'capslock') return 'capslock';
+    if (normalized === 'Shift' || normalized === 'shift') return 'shift';
+    if (normalized === 'Control' || normalized === 'ctrl') return 'ctrl';
+    if (normalized === 'Alt' || normalized === 'alt') return 'alt';
+    if (normalized === 'Meta' || normalized === 'meta') return 'meta';
+    if (normalized === 'ArrowUp') return '↑';
+    if (normalized === 'ArrowDown') return '↓';
+    if (normalized === 'ArrowLeft') return '←';
+    if (normalized === 'ArrowRight') return '→';
+    if (normalized === 'Home') return 'home';
+    if (normalized === 'End') return 'end';
+    if (normalized === 'PageUp') return 'pageup';
+    if (normalized === 'PageDown') return 'pagedown';
+    if (normalized === 'Insert') return 'insert';
+    if (normalized === 'Delete') return 'delete';
+    if (normalized.startsWith('F') && normalized.length <= 3) return normalized;
+    return normalized;
+}
+
+// ============ ГЛОБАЛЬНАЯ БЛОКИРОВКА СТАНДАРТНЫХ КЛАВИШ ============
+document.addEventListener('keydown', function(e) {
+    const blockedKeys = [
+        ' ', 'Space', 'Tab', 'Enter', 'Escape',
+        'Home', 'End', 'PageUp', 'PageDown',
+        'Insert', 'Delete', 'Backspace',
+        'CapsLock', 'Shift', 'Control', 'Alt', 'Meta',
+        '`', '-', '=', '[', ']', '\\', ';', "'", ',', '.', '/',
+        '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+',
+        '{', '}', '|', ':', '"', '<', '>', '?'
+    ];
+    
+    if (blockedKeys.includes(e.key)) {
+        if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'SELECT') {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }
+}, true);
+
+// ============ ЗАГРУЗКА КОНФИГУРАЦИИ ============
+async function loadConfigFromServer() {
+    // На повторных визитах сразу используем последнюю рабочую копию. Серверную
+    // версию проверяем параллельно, поэтому интерфейс не ждёт PHP-хостинг.
+    try {
+        const saved = localStorage.getItem('dragonSound_config');
+        if (saved) {
+            const cached = JSON.parse(saved);
+            if (cached && cached.categories && cached.sounds && cached.music) {
+                config = cached;
+                configLoaded = true;
+                refreshConfigCacheInBackground();
+                console.log('✅ Конфигурация мгновенно загружена из кэша');
+                return true;
+            }
+        }
+    } catch (e) {
+        localStorage.removeItem('dragonSound_config');
+    }
+
+    try {
+        const response = await fetch('config_sync.php');
+        if (response.ok) {
+            const data = await response.json();
+            if (data && data.categories) {
+                config = data;
+                configLoaded = true;
+                localStorage.setItem('dragonSound_config', JSON.stringify(data));
+                console.log('✅ Конфигурация загружена с сервера');
+                return true;
+            }
+        }
+    } catch (e) {
+        console.log('⚠️ Не удалось загрузить конфиг с сервера:', e);
+    }
+    
+    try {
+        if (typeof defaultConfig !== 'undefined') {
+            config = JSON.parse(JSON.stringify(defaultConfig));
+            configLoaded = true;
+            console.log('✅ Используется defaultConfig из config.js');
+            return true;
+        }
+    } catch (e) {}
+    
+    config = {
+        adminLogin: 'admin',
+        adminPassword: 'dragon2024',
+        categories: [],
+        sounds: {},
+        music: {}
+    };
+    configLoaded = true;
+    return true;
+}
+
+// ============ ОБНОВЛЕНИЕ АВАТАРА В ШАПКЕ ============
+function updateHeaderAvatarFromSettings(settings) {
+    const headerAvatar = document.getElementById('headerAvatar');
+    if (!headerAvatar) return;
+    
+    if (!settings || !settings.avatar) {
+        headerAvatar.textContent = '👤';
+        headerAvatar.style.cssText = '';
+        return;
+    }
+    
+    headerAvatar.innerHTML = '';
+    headerAvatar.style.cssText = '';
+    
+    if (settings.avatar.startsWith('data:image')) {
+        const img = document.createElement('img');
+        img.src = settings.avatar;
+        img.alt = 'Аватар';
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;border-radius:50%;';
+        img.onerror = function() {
+            headerAvatar.textContent = '👤';
+            headerAvatar.style.cssText = '';
+        };
+        headerAvatar.appendChild(img);
+    } else {
+        const img = document.createElement('img');
+        img.src = settings.avatar + '?' + Date.now();
+        img.alt = 'Аватар';
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;border-radius:50%;';
+        img.onerror = function() {
+            console.warn('⚠️ Не удалось загрузить аватар:', settings.avatar);
+            headerAvatar.textContent = '👤';
+            headerAvatar.style.cssText = '';
+        };
+        headerAvatar.appendChild(img);
+    }
+}
+
+// ============ ПОЛЬЗОВАТЕЛЬСКИЕ НАСТРОЙКИ ============
+async function checkAuthStatus() {
+    const userInfo = document.getElementById('userInfo');
+    const authButtons = document.getElementById('authButtons');
+    const userNameDisplay = document.getElementById('userNameDisplay');
+    const headerAvatar = document.getElementById('headerAvatar');
+    const profileLink = document.getElementById('profileLink');
+    const saveBtn = document.getElementById('saveSettingsBtn');
+    
+    const token = getSessionToken();
+    const loggedIn = isLoggedIn();
+    const userData = getUserData();
+    
+    console.log('🔍 checkAuthStatus:');
+    console.log('  token:', token ? 'есть (' + token.substring(0, 20) + '...)' : 'нет');
+    console.log('  loggedIn:', loggedIn);
+    console.log('  userData:', userData);
+    
+    if (token) {
+        try {
+            const response = await fetch(`api.php?action=check_status&token=${encodeURIComponent(token)}`);
+            const data = await response.json();
+            
+            console.log('📥 Статус с сервера:', data);
+            
+            if (data.logged_in && data.user) {
+                userInfo.style.display = 'flex';
+                authButtons.style.display = 'none';
+                userNameDisplay.textContent = data.user.username || data.user.email;
+                if (profileLink) profileLink.style.display = 'inline-block';
+                if (saveBtn) saveBtn.style.display = 'flex';
+                currentUserEmail = data.user.email;
+                
+                const settings = await loadUserSettings();
+                if (settings && settings.avatar) {
+                    updateHeaderAvatarFromSettings(settings);
+                }
+                
+                return true;
+            } else {
+                console.warn('⚠️ На сервере не залогинен');
+                if (data.logged_in === false) {
+                    sessionStorage.clear();
+                }
+            }
+        } catch (error) {
+            console.error('❌ Ошибка проверки статуса:', error);
+            if (loggedIn && userData.email) {
+                userInfo.style.display = 'flex';
+                authButtons.style.display = 'none';
+                userNameDisplay.textContent = userData.username && userData.username.trim() !== '' 
+    ? userData.username 
+    : userData.email;
+                if (profileLink) profileLink.style.display = 'inline-block';
+                if (saveBtn) saveBtn.style.display = 'flex';
+                currentUserEmail = userData.email;
+                
+                const settings = sessionStorage.getItem('dragonSound_user_settings');
+                if (settings) {
+                    try {
+                        const parsed = JSON.parse(settings);
+                        if (parsed && parsed.avatar) {
+                            updateHeaderAvatarFromSettings(parsed);
+                        }
+                    } catch (e) {}
+                }
+                return true;
+            }
+        }
+    }
+    
+    userInfo.style.display = 'none';
+    authButtons.style.display = 'flex';
+    if (profileLink) profileLink.style.display = 'none';
+    if (saveBtn) saveBtn.style.display = 'none';
+    if (headerAvatar) {
+        headerAvatar.textContent = '👤';
+        headerAvatar.style.cssText = '';
+    }
+    return false;
+}
+
+async function loadUserSettings() {
+    const token = getSessionToken();
+    
+    if (!token) {
+        console.log('⚠️ Нет токена, настройки не загружены');
+        return null;
+    }
+    
+    try {
+        console.log('📥 Загружаем настройки пользователя...');
+        const response = await fetch(`api.php?action=user_settings&token=${encodeURIComponent(token)}`);
+        const data = await response.json();
+        
+        console.log('📥 Ответ от сервера:', data);
+        
+        if (data.success) {
+            userSettings = data.settings;
+            console.log('✅ Настройки пользователя загружены');
+            
+            if (data.settings && data.settings.musicHotkeys) {
+                window._userHotkeys = data.settings.musicHotkeys;
+            } else {
+                window._userHotkeys = {
+                    'pause_all': 'p',
+                    'stop_all': 'o',
+                    'next_track': 'ArrowRight',
+                    'prev_track': 'ArrowLeft',
+                    'volume_up': 'ArrowUp',
+                    'volume_down': 'ArrowDown'
+                };
+            }
+            
+            window.userSettings = data.settings;
+            window.userData = data.user;
+            
+            try {
+                sessionStorage.setItem('dragonSound_user_settings', JSON.stringify(data.settings));
+            } catch (e) {}
+            
+            if (data.settings && data.settings.avatar) {
+                updateHeaderAvatarFromSettings(data.settings);
+            }
+            
+            applyUserSettings(data.settings);
+            return data.settings;
+        } else {
+            console.warn('⚠️ Не удалось загрузить настройки:', data.error);
+            window._userHotkeys = {
+                'pause_all': 'p',
+                'stop_all': 'o',
+                'next_track': 'ArrowRight',
+                'prev_track': 'ArrowLeft',
+                'volume_up': 'ArrowUp',
+                'volume_down': 'ArrowDown'
+            };
+            return null;
+        }
+    } catch (error) {
+        console.error('❌ Ошибка загрузки настроек:', error);
+        window._userHotkeys = {
+            'pause_all': 'p',
+            'stop_all': 'o',
+            'next_track': 'ArrowRight',
+            'prev_track': 'ArrowLeft',
+            'volume_up': 'ArrowUp',
+            'volume_down': 'ArrowDown'
+        };
+        return null;
+    }
+}
+
+function applyUserSettings(settings) {
+    if (!settings) return;
+    
+    console.log('🔄 Применяем настройки пользователя...');
+    
+    if (settings.musicHotkeys) {
+        window._userHotkeys = settings.musicHotkeys;
+    }
+
+    if (Array.isArray(settings.favorites)) {
+        favorites = settings.favorites;
+        try { sessionStorage.setItem('dragonSound_favorites', JSON.stringify(favorites)); } catch (e) {}
+    }
+
+    if (settings.avatar) {
+        updateHeaderAvatarFromSettings(settings);
+    }
+    
+    if (settings.music_volume !== undefined) {
+        musicVolume = settings.music_volume / 100;
+        if (musicAudio) musicAudio.volume = musicVolume;
+        const volSlider = document.getElementById('musicVolume');
+        if (volSlider) {
+            volSlider.value = settings.music_volume;
+            const percent = settings.music_volume;
+            volSlider.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${percent}%, rgba(255, 255, 255, 0.15) ${percent}%, rgba(255, 255, 255, 0.15) 100%)`;
+        }
+        const volValue = document.getElementById('musicVolumeValue');
+        if (volValue) volValue.textContent = settings.music_volume + '%';
+    }
+    
+    if (settings.soundVolumes) {
+        try {
+            sessionStorage.setItem('dragonSound_soundVolumes', JSON.stringify(settings.soundVolumes));
+        } catch (e) {}
+        
+        let appliedCount = 0;
+        for (let soundId in settings.soundVolumes) {
+            if (audioObjects[soundId]) {
+                const vol = typeof settings.soundVolumes[soundId] === 'number' ? settings.soundVolumes[soundId] : 50;
+                audioObjects[soundId].volume = Math.min(100, Math.max(0, vol));
+                if (audioObjects[soundId].audio) {
+                    audioObjects[soundId].audio.volume = audioObjects[soundId].volume / 100;
+                }
+                const slider = document.getElementById(`vol-${soundId}`);
+                const display = document.getElementById(`val-${soundId}`);
+                if (slider) {
+                    slider.value = audioObjects[soundId].volume;
+                    const percent = audioObjects[soundId].volume;
+                    slider.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${percent}%, rgba(255,255,255,0.15) ${percent}%, rgba(255,255,255,0.15) 100%)`;
+                }
+                if (display) display.textContent = audioObjects[soundId].volume + '%';
+                appliedCount++;
+            }
+        }
+    }
+    
+    if (settings.keyBindings) {
+        for (let key in settings.keyBindings) {
+            keyBindings[key] = settings.keyBindings[key];
+        }
+        saveKeyBindingsSession();
+    }
+    
+    if (settings.keyVolumes) {
+        for (let key in settings.keyVolumes) {
+            keyVolumes[key] = settings.keyVolumes[key];
+        }
+        saveKeyVolumesSession();
+    }
+    
+    renderKeyBindingsUI();
+    updateAllKeyDisplays();
+}
+
+// ============ СОХРАНЕНИЕ НАСТРОЕК ============
+let isSaving = false;
+
+async function saveAllSettingsManually() {
+    const btn = document.getElementById('saveSettingsBtn');
+    const bigBtn = document.getElementById('saveBigSettingsBtn');
+    
+    if (isSaving) {
+        showSaveNotification('⏳ Уже сохраняется...', 'info');
+        return;
+    }
+    
+    const userData = getUserData();
+    const token = getSessionToken();
+    const loggedIn = isLoggedIn();
+    
+    if (!userData.email || !token || !loggedIn) {
+        showSaveNotification('❌ Вы не авторизованы', 'error');
+        return;
+    }
+    
+    isSaving = true;
+    
+    if (btn) { btn.classList.add('saving'); setHeaderSaveBtnState(btn, 'saving'); btn.title = 'Сохранение...'; }
+    if (bigBtn) { bigBtn.classList.add('saving'); bigBtn.innerHTML = '⏳ Сохранение...'; bigBtn.disabled = true; }
+    
+    try {
+        const soundVolumes = {};
+        for (let soundId in audioObjects) {
+            if (audioObjects[soundId] && typeof audioObjects[soundId].volume === 'number') {
+                soundVolumes[soundId] = Math.min(100, Math.max(0, audioObjects[soundId].volume));
+            }
+        }
+        
+        const musicVol = parseInt(document.getElementById('musicVolume')?.value || 50);
+        const currentKeyBindings = window._currentKeyBindings || keyBindings || {};
+        const currentKeyVolumes = window._currentKeyVolumes || keyVolumes || {};
+        
+        const settings = {
+            music_volume: musicVol,
+            soundVolumes: soundVolumes,
+            keyBindings: currentKeyBindings,
+            keyVolumes: currentKeyVolumes
+        };
+        
+        const response = await fetch('api.php?action=save_settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: userData.email,
+                session_token: token,
+                settings: settings
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.status === 401) {
+            showSaveNotification('⚠️ Сессия истекла, войдите заново', 'error');
+            sessionStorage.clear();
+            setTimeout(() => {
+                window.location.href = 'login.html';
+            }, 2000);
+            
+            if (btn) { btn.classList.remove('saving'); setHeaderSaveBtnState(btn, 'idle'); btn.title = 'Сохранить настройки'; }
+            if (bigBtn) { bigBtn.classList.remove('saving'); bigBtn.textContent = 'Сохранить настройки'; bigBtn.disabled = false; }
+            isSaving = false;
+            return;
+        }
+        
+        if (data.success) {
+            // ===== ВАЖНО: ИСПОЛЬЗУЕМ sessionStorage! =====
+            try {
+                sessionStorage.setItem('dragonSound_user_settings', JSON.stringify(settings));
+                sessionStorage.setItem('dragonSound_soundVolumes', JSON.stringify(soundVolumes));
+                sessionStorage.setItem('dragonSound_keyBindings', JSON.stringify(currentKeyBindings));
+            } catch (e) {}
+            
+            if (btn) { btn.classList.remove('saving'); btn.classList.add('saved'); setHeaderSaveBtnState(btn, 'saved'); btn.title = 'Сохранено!'; }
+            if (bigBtn) { bigBtn.classList.remove('saving'); bigBtn.classList.add('saved'); bigBtn.innerHTML = '✅ Сохранено!'; bigBtn.disabled = false; }
+            
+            showSaveNotification('✅ Все настройки сохранены!', 'success');
+            
+            setTimeout(() => {
+                if (btn) { btn.classList.remove('saved'); setHeaderSaveBtnState(btn, 'idle'); btn.title = 'Сохранить настройки'; }
+                if (bigBtn) { bigBtn.classList.remove('saved'); bigBtn.textContent = 'Сохранить настройки'; bigBtn.disabled = false; }
+            }, 3000);
+        } else {
+            if (btn) { btn.classList.remove('saving'); btn.classList.add('error'); setHeaderSaveBtnState(btn, 'error'); btn.title = 'Ошибка сохранения'; }
+            if (bigBtn) { bigBtn.classList.remove('saving'); bigBtn.classList.add('error'); bigBtn.innerHTML = '❌ Ошибка!'; bigBtn.disabled = false; }
+            
+            showSaveNotification('❌ ' + (data.error || 'Ошибка сохранения'), 'error');
+            
+            setTimeout(() => {
+                if (btn) { btn.classList.remove('error'); setHeaderSaveBtnState(btn, 'idle'); btn.title = 'Сохранить настройки'; }
+                if (bigBtn) { bigBtn.classList.remove('error'); bigBtn.textContent = 'Сохранить настройки'; bigBtn.disabled = false; }
+            }, 3000);
+        }
+    } catch (error) {
+        console.error('❌ Ошибка сохранения:', error);
+        
+        if (btn) { btn.classList.remove('saving'); btn.classList.add('error'); setHeaderSaveBtnState(btn, 'error'); btn.title = 'Ошибка сохранения'; }
+        if (bigBtn) { bigBtn.classList.remove('saving'); bigBtn.classList.add('error'); bigBtn.innerHTML = '❌ Ошибка!'; bigBtn.disabled = false; }
+        
+        showSaveNotification('❌ Ошибка соединения с сервером', 'error');
+        
+        setTimeout(() => {
+            if (btn) { btn.classList.remove('error'); setHeaderSaveBtnState(btn, 'idle'); btn.title = 'Сохранить настройки'; }
+            if (bigBtn) { bigBtn.classList.remove('error'); bigBtn.textContent = 'Сохранить настройки'; bigBtn.disabled = false; }
+        }, 3000);
+    } finally {
+        isSaving = false;
+    }
+}
+
+function showSaveNotification(message, type = 'info') {
+    let notification = document.getElementById('saveNotification');
+    if (!notification) {
+        notification = document.createElement('div');
+        notification.id = 'saveNotification';
+        notification.className = 'save-notification';
+        document.body.appendChild(notification);
+    }
+    
+    notification.textContent = message;
+    notification.className = 'save-notification ' + type + ' show';
+    
+    clearTimeout(notification._timeout);
+    notification._timeout = setTimeout(() => {
+        notification.classList.remove('show');
+    }, 3000);
+}
+
+// ============ ВЫХОД ============
+async function logoutUser() {
+    const userData = getUserData();
+    const token = getSessionToken();
+    
+    if (userData.email && token) {
+        try {
+            await fetch('api.php?action=logout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    email: userData.email,
+                    session_token: token 
+                })
+            });
+        } catch (error) {
+            console.error('Ошибка выхода:', error);
+        }
+    }
+    
+    sessionStorage.clear();
+    window.location.href = 'login.html';
+}
+
+// ============ ИНИЦИАЛИЗАЦИЯ ============
+function init() {
+    if (!configLoaded) {
+        loadConfigFromServer().then(() => {
+            if (!config.categories.find(c => c.id === currentCategory)) {
+                currentCategory = config.categories[0]?.id || 'battle';
+            }
+            renderCategories();
+            renderSounds();
+            loadPlaylist(currentCategory);
+            setupEventListeners();
+            updateCounters();
+            applyBackground();
+            initAudioCacheUI();
+            
+            setTimeout(startAutoUpdate, 3000);
+            
+            window.addEventListener('load', function() {
+                applyBackground();
+            });
+            
+            setTimeout(function() {
+                applyBackground();
+            }, 300);
+        });
+        return;
+    }
+    
+    if (!config.categories.find(c => c.id === currentCategory)) {
+        currentCategory = config.categories[0]?.id || 'battle';
+    }
+    renderCategories();
+    renderSounds();
+    loadPlaylist(currentCategory);
+    setupEventListeners();
+    updateCounters();
+    applyBackground();
+    initAudioCacheUI();
+    
+    setTimeout(startAutoUpdate, 3000);
+    
+    window.addEventListener('load', function() {
+        applyBackground();
+    });
+    
+    setTimeout(function() {
+        applyBackground();
+    }, 300);
+}
+
+function applyBackground() {
+    const cat = config.categories.find(c => c.id === currentCategory);
+    const body = document.body;
+    
+    if (cat && cat.bgImage) {
+        if (requestedBackgroundUrl === cat.bgImage) return;
+        requestedBackgroundUrl = cat.bgImage;
+        const img = new Image();
+        img.decoding = 'async';
+        img.fetchPriority = 'high';
+        img.onload = function() {
+            if (requestedBackgroundUrl !== cat.bgImage) return;
+            body.style.backgroundImage = `url('${cat.bgImage}')`;
+            body.style.backgroundSize = 'cover';
+            body.style.backgroundPosition = 'center';
+            body.style.backgroundAttachment = window.innerWidth <= 768 ? 'scroll' : 'fixed';
+            body.classList.add('has-custom-bg');
+        };
+        img.onerror = function() {
+            if (requestedBackgroundUrl !== cat.bgImage) return;
+            body.style.backgroundImage = `url('${cat.bgImage}')`;
+            body.style.backgroundSize = 'cover';
+            body.style.backgroundPosition = 'center';
+            body.style.backgroundAttachment = window.innerWidth <= 768 ? 'scroll' : 'fixed';
+            body.classList.add('has-custom-bg');
+        };
+        img.src = cat.bgImage;
+    } else {
+        requestedBackgroundUrl = '';
+        body.style.backgroundImage = '';
+        body.style.backgroundSize = '';
+        body.style.backgroundPosition = '';
+        body.style.backgroundAttachment = '';
+        body.classList.remove('has-custom-bg');
+    }
+}
+
+function updateBackgroundImage(categoryId) { 
+    currentCategory = categoryId; 
+    applyBackground(); 
+}
+
+// ============ КАТЕГОРИИ ЛОКАЦИЙ ============
+function renderCategories() {
+    const grid = document.getElementById('categoriesGrid');
+    if (!config.categories.length) {
+        grid.innerHTML = '<span style="color: var(--text-secondary); grid-column: 1/-1; text-align: center;">Нет категорий.</span>';
+        return;
+    }
+    
+    const sortedCats = [...config.categories].sort((a, b) => {
+        const orderA = a.order !== undefined ? a.order : 999;
+        const orderB = b.order !== undefined ? b.order : 999;
+        return orderA - orderB;
+    });
+    
+    grid.innerHTML = sortedCats.map((cat) => `
+        <button class="cat-btn${cat.id === currentCategory ? ' active' : ''}" data-category="${escapeHtml(cat.id)}">
+            ${cat.bgImage ? `<div class="cat-bg"><img data-src="${escapeHtml(cat.bgImage)}" alt="" loading="lazy" decoding="async"></div>` : ''}
+            <div class="cat-content">
+                ${cat.iconType === 'image' || (cat.icon && (cat.icon.startsWith('http') || cat.icon.includes('.'))) ? `
+                <span class="cat-icon">
+                    <img src="${escapeHtml(cat.icon)}" class="cat-icon-img" alt="${escapeHtml(cat.name)}" loading="lazy">
+                </span>` : ''}
+                <span class="cat-name">${escapeHtml(cat.name)}</span>
+            </div>
+        </button>
+    `).join('');
+    observeLazyImages(grid);
+
+    grid.querySelectorAll('.cat-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            if (this.dataset.category === currentCategory) return;
+            grid.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            currentCategory = this.dataset.category;
+            const cat = config.categories.find(c => c.id === currentCategory);
+            const isImage = cat && (cat.iconType === 'image' || (cat.icon && (cat.icon.startsWith('http') || cat.icon.includes('.'))));
+            document.getElementById('currentLocation').textContent = cat ? cat.name : currentCategory;
+            applyBackground();
+            pauseMusicOnSwitch();
+            loadPlaylist(currentCategory);
+        });
+    });
+}
+
+// ============ ЗВУКИ ============
+function renderSounds() {
+    const container = document.getElementById('soundsContainer');
+    container.innerHTML = '';
+    audioObjects = {};
+    favoriteCardHomes = {};
+
+    const favSection = buildFavoritesSection();
+    container.appendChild(favSection);
+
+    loadKeyVolumes();
+    
+    let savedVolumes = {};
+    try {
+        const saved = sessionStorage.getItem('dragonSound_soundVolumes');
+        if (saved) {
+            savedVolumes = JSON.parse(saved);
+        }
+    } catch (e) {}
+    
+    const soundKeys = Object.keys(config.sounds).sort((a, b) => {
+        const orderA = config.sounds[a].order !== undefined ? config.sounds[a].order : 999;
+        const orderB = config.sounds[b].order !== undefined ? config.sounds[b].order : 999;
+        return orderA - orderB;
+    });
+    
+    soundKeys.forEach((catKey) => {
+        const category = config.sounds[catKey];
+        if (!category) return;
+        if (!category.items) category.items = [];
+        
+        const catDiv = document.createElement('div');
+        catDiv.className = 'sound-category';
+        catDiv.id = `sound-cat-${catKey}`;
+        
+        const titleDiv = document.createElement('div');
+        titleDiv.className = 'sound-category-title';
+        const itemCount = category.items.length;
+        
+        const loopEnabled = category.loop !== undefined ? category.loop : true;
+        const loopText = loopEnabled ? 'Автоповтор включён' : 'Однократное воспроизведение';
+        const loopColor = 'var(--orange)';
+        const loopBg = 'rgba(243,156,18,0.12)';
+        const loopBorder = 'rgba(243,156,18,0.25)';
+        
+        const isImageIcon = category.iconType === 'image' || (category.icon && (category.icon.startsWith('http') || category.icon.includes('.')));
+        const iconHtml = isImageIcon ? `<img src="${escapeHtml(category.icon)}" loading="lazy" style="width:24px;height:24px;border-radius:4px;object-fit:cover;vertical-align:middle;margin-right:4px;">` : (escapeHtml(category.icon) || '🎵');
+
+        titleDiv.innerHTML = `
+            <span class="title-text">
+                <span class="title-icon">${iconHtml}</span>
+                <span class="title-name">${escapeHtml(category.title)}</span>
+                <span class="title-count">(${itemCount})</span>
+                <span class="loop-status" style="
+                    font-size:0.85em;
+                    color:${loopColor};
+                    background:${loopBg};
+                    padding:2px 10px;
+                    border-radius:12px;
+                    margin-left:6px;
+                    font-weight:500;
+                    letter-spacing:0.3px;
+                    border:1px solid ${loopBorder};
+                    white-space:nowrap;
+                " title="${loopText}">
+                    ${loopText}
+                </span>
+            </span>
+            <span class="arrow">▼</span>
+        `;
+        
+        const itemsWrapper = document.createElement('div');
+        itemsWrapper.className = 'sound-category-items';
+        const itemsGrid = document.createElement('div');
+        itemsGrid.className = 'sound-grid';
+        
+        const sortedItems = category.items && category.items.length ? 
+            [...category.items].sort((a, b) => {
+                const orderA = a.order !== undefined ? a.order : 999;
+                const orderB = b.order !== undefined ? b.order : 999;
+                return orderA - orderB;
+            }) : [];
+        
+        if (sortedItems.length) {
+            sortedItems.forEach((sound, index) => {
+                const soundId = `${catKey}-${index}`;
+                
+                const card = document.createElement('div');
+                card.className = 'sound-card';
+                card.id = `card-${soundId}`;
+                
+                const currentCat = config.categories.find(c => c.id === currentCategory);
+                const cardBg = sound.bgImage || (currentCat && currentCat.bgImage) || '';
+                
+                let initialVolume = savedVolumes[soundId] || 50;
+                const loopEnabledCat = category && category.loop !== undefined ? category.loop : true;
+                card.dataset.loop = loopEnabledCat ? 'true' : 'false';
+                
+                audioObjects[soundId] = { 
+                    audio: null, 
+                    playing: false, 
+                    volume: initialVolume,
+                    loaded: false,
+                    file: sound.file,
+                    loop: loopEnabledCat,
+                    categoryKey: catKey
+                };
+                
+                const isFav = favorites.includes(soundId);
+                card.innerHTML = `
+                    <div class="sound-card-bg">${cardBg ? `<img data-src="${escapeHtml(cardBg)}" alt="" loading="lazy" decoding="async">` : ''}</div>
+                    <div class="sound-card-overlay"></div>
+                    <button class="sound-card-fav-btn${isFav ? ' active' : ''}" id="fav-${soundId}" title="${isFav ? 'Убрать из избранного' : 'В избранное'}">${isFav ? '★' : '☆'}</button>
+                    <span class="sound-card-loop-badge" title="${loopEnabledCat ? 'Автоповтор включён' : 'Однократное воспроизведение'}">${loopEnabledCat ? '↻' : '1×'}</span>
+                    <div class="sound-card-content-wrapper">
+                        <div class="sound-card-content">
+                            <div class="sound-card-name">${escapeHtml(sound.name)}</div>
+                            <button class="sound-card-play-btn" id="btn-${soundId}">▶</button>
+                        </div>
+                        <div class="sound-card-volume">
+                            <span class="vol-icon">🔈</span>
+                            <input type="range" min="0" max="100" value="${initialVolume}" id="vol-${soundId}">
+                            <span class="vol-value" id="val-${soundId}">${initialVolume}%</span>
+                        </div>
+                    </div>
+                `;
+                observeLazyImages(card);
+
+                card.addEventListener('click', function(e) {
+                    if (e.target.closest('.sound-card-play-btn') || e.target.closest('.sound-card-fav-btn') || e.target.closest('input') || e.target.closest('.key-bind-btn') || e.target.closest('.key-hint')) return;
+                    toggleSound(soundId);
+                });
+
+                const playBtn = card.querySelector('.sound-card-play-btn');
+                playBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSound(soundId);
+                });
+
+                // На десктопе запрос начинается уже при наведении, а не после
+                // клика. На touch pointerdown даёт небольшую фору до click.
+                card.addEventListener('pointerenter', () => prepareSoundForPlayback(soundId), { once: true });
+                card.addEventListener('pointerdown', () => prepareSoundForPlayback(soundId), { once: true });
+                playBtn.addEventListener('focus', () => prepareSoundForPlayback(soundId), { once: true });
+
+                const favBtn = card.querySelector('.sound-card-fav-btn');
+                favBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleFavorite(soundId);
+                });
+                
+                const slider = card.querySelector(`#vol-${soundId}`);
+                if (slider) {
+                    slider.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${initialVolume}%, rgba(255,255,255,0.15) ${initialVolume}%, rgba(255,255,255,0.15) 100%)`;
+                    slider.addEventListener('input', function(e) {
+                        e.stopPropagation();
+                        changeVolume(soundId, this.value);
+                    });
+                    slider.addEventListener('click', e => e.stopPropagation());
+                }
+                
+                addKeyBindingButton(card, soundId);
+                itemsGrid.appendChild(card);
+                favoriteCardHomes[soundId] = { parent: itemsGrid };
+            });
+        } else {
+            itemsGrid.innerHTML = '<p style="color:var(--text-secondary);padding:20px;text-align:center;grid-column:1/-1;">Нет звуков в этой категории</p>';
+        }
+        
+        itemsWrapper.appendChild(itemsGrid);
+        
+        titleDiv.addEventListener('click', function() {
+            catDiv.classList.toggle('collapsed');
+            const cs = JSON.parse(sessionStorage.getItem('dragonSound_collapsed') || '{}');
+            cs[catKey] = catDiv.classList.contains('collapsed');
+            sessionStorage.setItem('dragonSound_collapsed', JSON.stringify(cs));
+        });
+        
+        catDiv.appendChild(titleDiv);
+        catDiv.appendChild(itemsWrapper);
+        container.appendChild(catDiv);
+        
+        const cs = JSON.parse(sessionStorage.getItem('dragonSound_collapsed') || '{}');
+        if (cs[catKey]) catDiv.classList.add('collapsed');
+    });
+
+    // Уже сохранённые избранные звуки сразу переносим в блок избранного
+    favorites.forEach(soundId => {
+        const card = document.getElementById(`card-${soundId}`);
+        if (card) {
+            syncSoundRepeatProperty(soundId);
+            favSection.querySelector('.sound-grid').appendChild(card);
+        }
+    });
+    updateFavoritesSectionVisibility();
+
+    renderKeyBindingsUI();
+    
+    setTimeout(() => {
+        loadSoundVolumes();
+    }, 100);
+    
+    setTimeout(lazyLoadSounds, 300);
+}
+
+// ============ ИЗБРАННОЕ ============
+function buildFavoritesSection() {
+    const catDiv = document.createElement('div');
+    catDiv.className = 'sound-category favorites-category';
+    catDiv.id = 'favoritesSection';
+    catDiv.style.display = 'none';
+
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'sound-category-title';
+    titleDiv.innerHTML = `
+        <span class="title-text">
+            <span class="title-icon">⭐</span>
+            <span class="title-name">Избранное</span>
+            <span class="title-count" id="favoritesCount">(0)</span>
+        </span>
+        <span class="arrow">▼</span>
+    `;
+
+    const itemsWrapper = document.createElement('div');
+    itemsWrapper.className = 'sound-category-items';
+    const itemsGrid = document.createElement('div');
+    itemsGrid.className = 'sound-grid';
+    itemsWrapper.appendChild(itemsGrid);
+
+    titleDiv.addEventListener('click', function() {
+        catDiv.classList.toggle('collapsed');
+    });
+
+    catDiv.appendChild(titleDiv);
+    catDiv.appendChild(itemsWrapper);
+    return catDiv;
+}
+
+function updateFavoritesSectionVisibility() {
+    const section = document.getElementById('favoritesSection');
+    if (!section) return;
+    const grid = section.querySelector('.sound-grid');
+    const count = grid ? grid.children.length : 0;
+    section.style.display = count > 0 ? '' : 'none';
+    const countEl = document.getElementById('favoritesCount');
+    if (countEl) countEl.textContent = `(${count})`;
+}
+
+// Карточка в «Избранном» остаётся связана с исходной категорией. Поэтому
+// режим повтора всегда заново берём из config, а не из положения карточки в DOM.
+function syncSoundRepeatProperty(soundId) {
+    const data = audioObjects[soundId];
+    if (!data) return true;
+    const sourceCategory = data.categoryKey && config?.sounds ? config.sounds[data.categoryKey] : null;
+    const shouldLoop = sourceCategory && sourceCategory.loop !== undefined
+        ? Boolean(sourceCategory.loop)
+        : (data.loop !== undefined ? Boolean(data.loop) : true);
+    data.loop = shouldLoop;
+    if (data.audio) data.audio.loop = shouldLoop;
+
+    const card = document.getElementById(`card-${soundId}`);
+    if (card) {
+        card.dataset.loop = shouldLoop ? 'true' : 'false';
+        const badge = card.querySelector('.sound-card-loop-badge');
+        if (badge) {
+            badge.textContent = shouldLoop ? '↻' : '1×';
+            badge.title = shouldLoop ? 'Автоповтор включён' : 'Однократное воспроизведение';
+        }
+    }
+    return shouldLoop;
+}
+
+// Не клонируем карточку, а физически переносим её DOM-узел между секциями —
+// так у играющего звука не сбрасывается audioObjects/Audio-элемент, и не
+// возникает дублей id="card-..." на странице.
+function toggleFavorite(soundId) {
+    if (!isLoggedIn()) {
+        showAuthRequiredModal('Чтобы сохранять звуки в избранное, нужно зарегистрироваться — так они не потеряются и будут доступны с любого устройства.');
+        return;
+    }
+
+    const card = document.getElementById(`card-${soundId}`);
+    const idx = favorites.indexOf(soundId);
+    const favSection = document.getElementById('favoritesSection');
+    const favGrid = favSection ? favSection.querySelector('.sound-grid') : null;
+
+    if (idx === -1) {
+        favorites.push(soundId);
+        syncSoundRepeatProperty(soundId);
+        if (card && favGrid) favGrid.appendChild(card);
+    } else {
+        favorites.splice(idx, 1);
+        const home = favoriteCardHomes[soundId];
+        if (card && home && home.parent) home.parent.appendChild(card);
+    }
+
+    const favBtn = card ? card.querySelector('.sound-card-fav-btn') : null;
+    if (favBtn) {
+        const nowFav = favorites.includes(soundId);
+        favBtn.classList.toggle('active', nowFav);
+        favBtn.textContent = nowFav ? '★' : '☆';
+        favBtn.title = nowFav ? 'Убрать из избранного' : 'В избранное';
+    }
+
+    saveFavoritesSession();
+    updateFavoritesSectionVisibility();
+}
+
+function lazyLoadSounds() {
+    const cards = document.querySelectorAll('.sound-card:not(.loaded)');
+    if (cards.length === 0) return;
+    
+    if ('IntersectionObserver' in window) {
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const card = entry.target;
+                    const soundId = card.id.replace('card-', '');
+                    if (audioObjects[soundId] && !audioObjects[soundId].loaded) {
+                        const audio = new Audio();
+                        audio.loop = audioObjects[soundId].loop !== undefined ? audioObjects[soundId].loop : true;
+                        audio.volume = audioObjects[soundId].volume / 100;
+                        audio.preload = 'none';
+                        audioObjects[soundId].audio = audio;
+                        audioObjects[soundId].loaded = true;
+                        card.classList.add('loaded');
+                        
+                        audio.addEventListener('ended', function() {
+                            const data = audioObjects[soundId];
+                            if (data) {
+                                data.playing = false;
+                                const cardEl = document.getElementById(`card-${soundId}`);
+                                const btnEl = document.getElementById(`btn-${soundId}`);
+                                if (cardEl) cardEl.classList.remove('playing');
+                                if (btnEl) btnEl.textContent = '▶';
+                                updateCounters();
+                                updatePauseButton();
+                            }
+                        });
+                    }
+                    observer.unobserve(card);
+                }
+            });
+        }, { rootMargin: '200px' });
+        
+        cards.forEach(card => observer.observe(card));
+    } else {
+        cards.forEach(card => {
+            const soundId = card.id.replace('card-', '');
+            if (audioObjects[soundId] && !audioObjects[soundId].loaded) {
+                const audio = new Audio();
+                audio.loop = audioObjects[soundId].loop !== undefined ? audioObjects[soundId].loop : true;
+                audio.volume = audioObjects[soundId].volume / 100;
+                audio.preload = 'none';
+                audioObjects[soundId].audio = audio;
+                audioObjects[soundId].loaded = true;
+                card.classList.add('loaded');
+                
+                audio.addEventListener('ended', function() {
+                    const data = audioObjects[soundId];
+                    if (data) {
+                        data.playing = false;
+                        const cardEl = document.getElementById(`card-${soundId}`);
+                        const btnEl = document.getElementById(`btn-${soundId}`);
+                        if (cardEl) cardEl.classList.remove('playing');
+                        if (btnEl) btnEl.textContent = '▶';
+                        updateCounters();
+                        updatePauseButton();
+                    }
+                });
+            }
+        });
+    }
+}
+
+async function refreshConfigCacheInBackground() {
+    try {
+        const response = await fetch('config_sync.php', { cache: 'no-store' });
+        if (!response.ok) return;
+        const fresh = await response.json();
+        if (!fresh || !fresh.categories || !fresh.sounds || !fresh.music) return;
+
+        localStorage.setItem('dragonSound_config', JSON.stringify(fresh));
+        const changed = JSON.stringify(fresh) !== JSON.stringify(config);
+        if (!changed) return;
+
+        if (!initialRenderComplete) {
+            config = fresh;
+        } else {
+            window._pendingConfig = fresh;
+            showUpdateNotificationWithButton();
+        }
+    } catch (e) {
+        console.log('⚠️ Фоновое обновление конфига недоступно');
+    }
+}
+
+// Начинаем подготавливать звук, когда пользователь навёл мышь или дошёл до
+// кнопки клавиатурой. Это даёт браузеру фору до клика, но не запускает загрузку
+// всех 50+ файлов при открытии страницы.
+async function prepareSoundForPlayback(soundId) {
+    const data = audioObjects[soundId];
+    if (!data || !data.file) return;
+    syncSoundRepeatProperty(soundId);
+
+    if (!data.audio) {
+        data.audio = new Audio();
+        data.audio.loop = data.loop !== undefined ? data.loop : true;
+        data.audio.volume = data.volume / 100;
+    }
+
+    await setCacheFirstAudioSource(data.audio, data.file);
+
+    if (data.audio.preload !== 'metadata') {
+        data.audio.preload = 'metadata';
+        data.audio.load();
+    }
+    data.loaded = true;
+}
+
+async function toggleSound(soundId) {
+    const data = audioObjects[soundId];
+    if (!data) return;
+    syncSoundRepeatProperty(soundId);
+    
+    const card = document.getElementById(`card-${soundId}`);
+    const btn = document.getElementById(`btn-${soundId}`);
+    
+    function createAudioWithEndHandler() {
+        const audio = new Audio();
+        audio.loop = data.loop !== undefined ? data.loop : true;
+        audio.volume = data.volume / 100;
+        audio.preload = 'metadata';
+        
+        audio.addEventListener('ended', function() {
+            if (!data.loop) {
+                data.playing = false;
+                if (card) card.classList.remove('playing');
+                if (btn) btn.textContent = '▶';
+                updateCounters();
+                updatePauseButton();
+            }
+        });
+        
+        return audio;
+    }
+    
+    if (!data.loaded) {
+        data.audio = createAudioWithEndHandler();
+        data.loaded = true;
+    }
+    
+    if (data.playing) {
+        if (data.audio) {
+            data.audio.pause();
+            data.audio.currentTime = 0;
+        }
+        data.playing = false;
+        if (card) card.classList.remove('playing');
+        if (btn) btn.textContent = '▶';
+    } else {
+        if (!data.audio) {
+            data.audio = createAudioWithEndHandler();
+            data.loaded = true;
+        }
+
+        await setCacheFirstAudioSource(data.audio, data.file);
+        
+        if (!data.loop && data.audio) {
+            data.audio.currentTime = 0;
+        }
+        
+        data.audio.play().then(() => {
+            data.playing = true;
+            if (card) card.classList.add('playing');
+            if (btn) btn.textContent = '⏸';
+            updateCounters();
+        }).catch(err => {
+            console.error('Ошибка воспроизведения:', err);
+            data.playing = false;
+            if (card) card.classList.remove('playing');
+            if (btn) btn.textContent = '▶';
+            updateCounters();
+        });
+    }
+    soundsPaused = false;
+    updatePauseButton();
+    updateCounters();
+}
+
+function changeVolume(soundId, value) {
+    const data = audioObjects[soundId];
+    if (!data) return;
+    const vol = value / 100;
+    data.volume = parseInt(value);
+    if (data.audio) data.audio.volume = vol;
+    
+    const display = document.getElementById(`val-${soundId}`);
+    if (display) display.textContent = value + '%';
+    
+    const slider = document.getElementById(`vol-${soundId}`);
+    if (slider) {
+        const percent = value;
+        slider.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${percent}%, rgba(255,255,255,0.15) ${percent}%, rgba(255,255,255,0.15) 100%)`;
+    }
+}
+
+function saveAllSoundVolumes() {
+    const volumes = {};
+    for (let soundId in audioObjects) {
+        if (audioObjects[soundId] && typeof audioObjects[soundId].volume === 'number' && !isNaN(audioObjects[soundId].volume)) {
+            volumes[soundId] = Math.min(100, Math.max(0, audioObjects[soundId].volume));
+        } else {
+            volumes[soundId] = 50;
+        }
+    }
+    
+    const cleanVolumes = {};
+    for (let key in volumes) {
+        if (typeof volumes[key] === 'number' && !isNaN(volumes[key]) && volumes[key] >= 0 && volumes[key] <= 100) {
+            cleanVolumes[key] = volumes[key];
+        } else {
+            cleanVolumes[key] = 50;
+        }
+    }
+    
+    try {
+        sessionStorage.setItem('dragonSound_soundVolumes', JSON.stringify(cleanVolumes));
+    } catch (e) {
+        console.error('❌ Ошибка сохранения громкостей в сессии:', e);
+    }
+}
+
+function loadSoundVolumes() {
+    if (userSettings && userSettings.soundVolumes) {
+        let appliedCount = 0;
+        for (let soundId in userSettings.soundVolumes) {
+            if (audioObjects[soundId]) {
+                const vol = typeof userSettings.soundVolumes[soundId] === 'number' ? userSettings.soundVolumes[soundId] : 50;
+                audioObjects[soundId].volume = Math.min(100, Math.max(0, vol));
+                if (audioObjects[soundId].audio) {
+                    audioObjects[soundId].audio.volume = audioObjects[soundId].volume / 100;
+                }
+                const slider = document.getElementById(`vol-${soundId}`);
+                const display = document.getElementById(`val-${soundId}`);
+                if (slider) {
+                    slider.value = audioObjects[soundId].volume;
+                    const percent = audioObjects[soundId].volume;
+                    slider.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${percent}%, rgba(255,255,255,0.15) ${percent}%, rgba(255,255,255,0.15) 100%)`;
+                }
+                if (display) display.textContent = audioObjects[soundId].volume + '%';
+                appliedCount++;
+            }
+        }
+        return;
+    }
+    
+    try {
+        const saved = sessionStorage.getItem('dragonSound_soundVolumes');
+        if (saved) {
+            const volumes = JSON.parse(saved);
+            if (Array.isArray(volumes)) {
+                const obj = {};
+                for (let i = 0; i < volumes.length; i++) {
+                    obj[i] = volumes[i];
+                }
+                sessionStorage.setItem('dragonSound_soundVolumes', JSON.stringify(obj));
+                return;
+            }
+            
+            let appliedCount = 0;
+            for (let soundId in volumes) {
+                if (audioObjects[soundId]) {
+                    const vol = typeof volumes[soundId] === 'number' ? Math.min(100, Math.max(0, volumes[soundId])) : 50;
+                    audioObjects[soundId].volume = vol;
+                    if (audioObjects[soundId].audio) {
+                        audioObjects[soundId].audio.volume = vol / 100;
+                    }
+                    const slider = document.getElementById(`vol-${soundId}`);
+                    const display = document.getElementById(`val-${soundId}`);
+                    if (slider) {
+                        slider.value = vol;
+                        const percent = vol;
+                        slider.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${percent}%, rgba(255,255,255,0.15) ${percent}%, rgba(255,255,255,0.15) 100%)`;
+                    }
+                    if (display) display.textContent = vol + '%';
+                    appliedCount++;
+                }
+            }
+        }
+    } catch (e) {
+        console.error('❌ Ошибка загрузки громкостей:', e);
+        try {
+            sessionStorage.removeItem('dragonSound_soundVolumes');
+        } catch (err) {}
+    }
+}
+
+function pauseAllSounds() {
+    pauseAllSoundsAndMusic();
+}
+
+function stopAllSounds() {
+    stopAllSoundsAndMusic();
+}
+
+// Смена категории меняет плейлист музыки, что и так обрывает старый трек через
+// musicAudio.load() внутри loadTrack() — но без этого состояние musicPlaying
+// и иконка play/pause оставались рассинхронизированы (звук уже не играет,
+// а кнопка всё ещё показывает "пауза"). Явно ставим на паузу и синхронизируем UI.
+function pauseMusicOnSwitch() {
+    if (musicPlaying) {
+        musicAudio.pause();
+        musicPlaying = false;
+        updateMusicButton();
+        updatePlaylistHighlight();
+    }
+}
+
+function pauseAllSoundsAndMusic() {
+    if (musicPlaying) {
+        musicAudio.pause();
+        musicPlaying = false;
+        updateMusicButton();
+        updatePlaylistHighlight();
+    }
+    
+    const hasActive = Object.values(audioObjects).some(d => d.playing);
+    
+    const hasExternalMusic = typeof activeMusicSource !== 'undefined' && activeMusicSource !== 'local';
+    if (!hasActive && !soundsPaused && !hasExternalMusic) {
+        showKeyBindingNotification('⏸ Нет активных звуков');
+        return;
+    }
+    
+    if (soundsPaused) {
+        resumeAllSounds();
+        if (activeMusicSource === 'local' && !musicPlaying && musicAudio.src) {
+            musicAudio.play().then(() => {
+                musicPlaying = true;
+                updateMusicButton();
+                updatePlaylistHighlight();
+            }).catch(err => console.error(err));
+        }
+        showKeyBindingNotification('▶ Продолжить');
+        return;
+    }
+    
+    pausedSounds = [];
+    Object.entries(audioObjects).forEach(([id, data]) => {
+        if (data.playing && data.audio) {
+            data.audio.pause();
+            data.playing = false;
+            pausedSounds.push(id);
+            const card = document.getElementById(`card-${id}`);
+            const btn = document.getElementById(`btn-${id}`);
+            if (card) { card.classList.remove('playing'); card.classList.add('paused'); }
+            if (btn) btn.textContent = '⏸';
+        }
+    });
+    soundsPaused = true;
+    updatePauseButton();
+    updateCounters();
+    showKeyBindingNotification('⏸ Пауза');
+}
+
+function stopAllSoundsAndMusic() {
+    if (musicAudio) {
+        musicAudio.pause();
+        musicAudio.currentTime = 0;
+        musicPlaying = false;
+        updateMusicButton();
+        updatePlaylistHighlight();
+        const pf = document.getElementById('progressFill');
+        const ct = document.getElementById('currentTime');
+        const tt = document.getElementById('totalTime');
+        if (pf) pf.style.width = '0%';
+        if (ct) ct.textContent = '0:00';
+        if (tt) tt.textContent = '--:--';
+    }
+    
+    Object.entries(audioObjects).forEach(([id, data]) => {
+        if (data.audio) {
+            data.audio.pause();
+            data.audio.currentTime = 0;
+        }
+        data.playing = false;
+        
+        const card = document.getElementById(`card-${id}`);
+        const btn = document.getElementById(`btn-${id}`);
+        
+        if (card) { 
+            card.classList.remove('playing'); 
+            card.classList.remove('paused'); 
+        }
+        if (btn) btn.textContent = '▶';
+    });
+    
+    pausedSounds = [];
+    soundsPaused = false;
+    updatePauseButton();
+    updateCounters();
+    
+    showKeyBindingNotification('⏹ Всё остановлено');
+}
+
+function resumeAllSounds() {
+    Promise.all(pausedSounds.map(id => {
+        const data = audioObjects[id];
+        if (data && data.audio) {
+            if (!data.loop) {
+                data.audio.currentTime = 0;
+            }
+            return data.audio.play().then(() => {
+                data.playing = true;
+                const card = document.getElementById(`card-${id}`);
+                const btn = document.getElementById(`btn-${id}`);
+                if (card) { card.classList.remove('paused'); card.classList.add('playing'); }
+                if (btn) btn.textContent = '⏸';
+            }).catch(err => console.error(err));
+        }
+        return Promise.resolve();
+    })).then(() => {
+        pausedSounds = [];
+        soundsPaused = false;
+        updatePauseButton();
+        updateCounters();
+    });
+}
+
+function updatePauseButton() {
+    const btn = document.getElementById('pauseAllBtn');
+    const mobileBtn = document.getElementById('mobilePauseBtn');
+    
+    const activeCount = Object.values(audioObjects).filter(d => d.playing).length;
+    
+    // Обновляем обычную кнопку
+    if (btn) {
+        if (activeCount === 0 && !soundsPaused) {
+            btn.textContent = '⏸ Пауза';
+        } else {
+            btn.textContent = soundsPaused ? '▶ Продолжить' : '⏸ Пауза';
+        }
+    }
+    
+    // Обновляем мобильную кнопку (SVG)
+    if (mobileBtn) {
+        mobileBtn.classList.remove('resume', 'has-active');
+        
+        if (activeCount > 0) {
+            mobileBtn.classList.add('has-active');
+        }
+        
+        if (soundsPaused && activeCount > 0) {
+            mobileBtn.classList.add('resume');
+            mobileBtn.title = 'Продолжить';
+            mobileBtn.innerHTML = `
+                <svg viewBox="0 0 24 24">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+            `;
+        } else {
+            mobileBtn.title = activeCount > 0 ? 'Пауза' : 'Нет активных звуков';
+            mobileBtn.innerHTML = `
+                <svg viewBox="0 0 24 24">
+                    <rect x="6" y="4" width="4" height="16"/>
+                    <rect x="14" y="4" width="4" height="16"/>
+                </svg>
+            `;
+        }
+    }
+}
+
+function updateCounters() {
+    let count = 0;
+    for (let id in audioObjects) {
+        if (audioObjects[id].playing === true) count++;
+    }
+    
+    // Обновляем обычные счётчики
+    const ac = document.getElementById('activeCount');
+    const ach = document.getElementById('activeCountHeader');
+    if (ac) ac.textContent = count;
+    if (ach) ach.textContent = count;
+    
+    // ===== ОБНОВЛЯЕМ МОБИЛЬНЫЙ БЕЙДЖ =====
+    const mobileBadge = document.getElementById('mobileActiveCount');
+    if (mobileBadge) {
+        mobileBadge.textContent = count;
+        if (count > 0) {
+            mobileBadge.classList.add('has-active');
+            mobileBadge.classList.add('pulsing');
+        } else {
+            mobileBadge.classList.remove('has-active');
+            mobileBadge.classList.remove('pulsing');
+        }
+    }
+}
+
+// ============ МУЗЫКА ============
+function loadPlaylist(categoryId) {
+    if (playlistCache[categoryId]) {
+        currentPlaylist = playlistCache[categoryId];
+        renderPlaylistUI();
+        return;
+    }
+    
+    const musicCat = config.music[categoryId] || [];
+    currentPlaylist = musicCat;
+    playlistCache[categoryId] = musicCat;
+    currentTrackIndex = 0;
+    shuffleOrder = [];
+    generateShuffleOrder();
+    
+    renderPlaylistUI();
+}
+
+function renderPlaylistUI() {
+    const musicCat = currentPlaylist;
+    const playlistDiv = document.getElementById('playlistItems');
+    const trackCount = document.getElementById('trackCount');
+    if (trackCount) trackCount.textContent = `${musicCat.length} треков`;
+    
+    if (musicCat.length === 0) {
+        if (playlistDiv) playlistDiv.innerHTML = '<div class="no-music"><p>Нет треков</p></div>';
+        document.getElementById('trackTitle').textContent = 'Нет треков';
+        document.getElementById('trackArtist').textContent = '';
+        return;
+    }
+    
+    if (playlistDiv) {
+        playlistDiv.innerHTML = musicCat.map((track, i) => `
+            <div class="playlist-item${i===0?' active':''}" data-index="${i}">
+                <span class="playlist-num">${i+1}</span>
+                <div class="playlist-item-info">
+                    <div class="playlist-item-name">${escapeHtml(track.title)}</div>
+                </div>
+                <span class="playlist-item-duration">--:--</span>
+            </div>
+        `).join('');
+        
+        playlistDiv.querySelectorAll('.playlist-item').forEach(item => {
+            item.addEventListener('click', () => playTrack(parseInt(item.dataset.index)));
+            item.addEventListener('pointerenter', () => {
+                const track = currentPlaylist[parseInt(item.dataset.index)];
+                if (track) scheduleTrackWarmup(track.file);
+            });
+            item.addEventListener('focusin', () => {
+                const track = currentPlaylist[parseInt(item.dataset.index)];
+                if (track) scheduleTrackWarmup(track.file);
+            });
+        });
+    }
+    loadTrack(0);
+}
+
+function preloadNextTrack() {
+    if (preloadTimer) {
+        clearTimeout(preloadTimer);
+        preloadTimer = null;
+    }
+    
+    preloadTimer = setTimeout(() => {
+        if (currentPlaylist.length > 1) {
+            const nextIndex = getNextTrackIndex();
+            if (nextIndex !== undefined && currentPlaylist[nextIndex]) {
+                const nextTrack = currentPlaylist[nextIndex];
+                if (musicAudio.src !== new URL(nextTrack.file, window.location.href).href) {
+                    let preloadAudio = new Audio();
+                    preloadAudio.preload = 'metadata';
+                    setCacheFirstAudioSource(preloadAudio, nextTrack.file).then(() => {
+                        preloadAudio.load();
+                        musicPreloaded = true;
+                        setTimeout(() => {
+                            preloadAudio.removeAttribute('src');
+                            preloadAudio = null;
+                        }, 5000);
+                    });
+                }
+            }
+        }
+        preloadTimer = null;
+    }, 2000);
+}
+
+function generateShuffleOrder() {
+    shuffleOrder = Array.from({length: currentPlaylist.length}, (_, i) => i);
+    if (shuffleMode) {
+        for (let i = shuffleOrder.length-1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i+1));
+            [shuffleOrder[i], shuffleOrder[j]] = [shuffleOrder[j], shuffleOrder[i]];
+        }
+    }
+}
+
+function getNextTrackIndex() {
+    if (shuffleMode) {
+        const idx = shuffleOrder.indexOf(currentTrackIndex);
+        return idx < shuffleOrder.length-1 ? shuffleOrder[idx+1] : (generateShuffleOrder(), shuffleOrder[0]);
+    }
+    return (currentTrackIndex + 1) % currentPlaylist.length;
+}
+
+function getPrevTrackIndex() {
+    if (shuffleMode) {
+        const idx = shuffleOrder.indexOf(currentTrackIndex);
+        return idx > 0 ? shuffleOrder[idx-1] : shuffleOrder[shuffleOrder.length-1];
+    }
+    return currentTrackIndex - 1 < 0 ? currentPlaylist.length - 1 : currentTrackIndex - 1;
+}
+
+function loadTrack(index) {
+    if (currentPlaylist.length === 0) return;
+    currentTrackIndex = index;
+    const track = currentPlaylist[index];
+    selectedMusicFile = track.file;
+    musicAudio.volume = musicVolume;
+    // Не назначаем src и не вызываем load() при открытии страницы или смене
+    // категории. Иначе браузер делает Range-запрос к MP3, хотя пользователь
+    // музыку ещё не запускал. Источник подключится непосредственно перед play().
+    if (!musicPlaying) {
+        musicAudio.pause();
+        musicAudio.removeAttribute('src');
+    }
+    document.getElementById('trackTitle').textContent = track.title;
+    document.getElementById('trackArtist').textContent = (config.categories.find(c => c.id === currentCategory) || {}).name || '';
+    updatePlaylistHighlight();
+    const pf = document.getElementById('progressFill');
+    const ct = document.getElementById('currentTime');
+    const tt = document.getElementById('totalTime');
+    if (pf) pf.style.width = '0%';
+    if (ct) ct.textContent = '0:00';
+    if (tt) tt.textContent = '--:--';
+
+    // Предзагружаем следующий трек только если музыка реально играет —
+    // иначе при обычном открытии страницы браузер тянет треки, которые никто не запускал
+    if (musicPlaying) preloadNextTrack();
+}
+
+// Подготовка метаданных при осознанном наведении на трек. Небольшая задержка
+// не даёт создавать десятки запросов, когда курсор быстро проходит по списку.
+function scheduleTrackWarmup(file) {
+    if (!file || musicPlaying) return;
+    if (hoverPreloadTimer) clearTimeout(hoverPreloadTimer);
+    hoverPreloadTimer = setTimeout(() => {
+        if (hoverPreloadAudio) {
+            hoverPreloadAudio.pause();
+            hoverPreloadAudio.removeAttribute('src');
+        }
+        hoverPreloadAudio = new Audio();
+        hoverPreloadAudio.preload = 'metadata';
+        hoverPreloadAudio.src = file;
+        hoverPreloadAudio.load();
+    }, 180);
+}
+
+async function ensureSelectedMusicSource() {
+    if (!selectedMusicFile) return false;
+    return setCacheFirstAudioSource(musicAudio, selectedMusicFile);
+}
+
+async function playTrack(index) {
+    if (currentPlaylist.length === 0) return;
+    if (index === currentTrackIndex && musicPlaying) {
+        musicAudio.pause();
+        musicPlaying = false;
+        updateMusicButton();
+        updatePlaylistHighlight();
+        return;
+    }
+    if (index !== currentTrackIndex) loadTrack(index);
+    if (!await ensureSelectedMusicSource()) return;
+    musicAudio.play().then(() => {
+        musicPlaying = true;
+        updateMusicButton();
+        updatePlaylistHighlight();
+        preloadNextTrack();
+    }).catch(err => {
+        console.error(err);
+    });
+}
+
+async function playNextTrack() {
+    if (currentPlaylist.length === 0) return;
+    loadTrack(getNextTrackIndex());
+    if (musicPlaying && await ensureSelectedMusicSource()) musicAudio.play().catch(() => {});
+}
+
+async function playPrevTrack() {
+    if (currentPlaylist.length === 0) return;
+    loadTrack(getPrevTrackIndex());
+    if (musicPlaying && await ensureSelectedMusicSource()) musicAudio.play().catch(() => {});
+}
+
+function toggleShuffle() {
+    shuffleMode = !shuffleMode;
+    const btn = document.getElementById('shuffleBtn');
+    if (btn) {
+        if (shuffleMode) {
+            btn.classList.add('active');
+            generateShuffleOrder();
+        } else {
+            btn.classList.remove('active');
+        }
+    }
+}
+
+function toggleRepeat() {
+    repeatMode = !repeatMode;
+    const btn = document.getElementById('repeatBtn');
+    if (btn) {
+        if (repeatMode) btn.classList.add('active');
+        else btn.classList.remove('active');
+    }
+}
+
+function updateMusicButton() {
+    const pi = document.getElementById('playIcon');
+    const pa = document.getElementById('pauseIcon');
+    if (pi && pa) {
+        if (musicPlaying) {
+            pi.style.display = 'none';
+            pa.style.display = 'block';
+        } else {
+            pi.style.display = 'block';
+            pa.style.display = 'none';
+        }
+    }
+}
+
+function updatePlaylistHighlight() {
+    document.querySelectorAll('.playlist-item').forEach((item, i) => {
+        item.classList.toggle('active', i === currentTrackIndex);
+        item.classList.toggle('playing', i === currentTrackIndex && musicPlaying);
+    });
+}
+
+function setupEventListeners() {
+    document.getElementById('musicPlayBtn').addEventListener('click', () => playTrack(currentTrackIndex));
+    document.getElementById('prevBtn').addEventListener('click', playPrevTrack);
+    document.getElementById('nextBtn').addEventListener('click', playNextTrack);
+    document.getElementById('shuffleBtn').addEventListener('click', toggleShuffle);
+    document.getElementById('repeatBtn').addEventListener('click', toggleRepeat);
+    
+    document.getElementById('progressBar').addEventListener('click', function(e) {
+        const r = this.getBoundingClientRect();
+        if (musicAudio.duration) {
+            musicAudio.currentTime = ((e.clientX - r.left) / r.width) * musicAudio.duration;
+        }
+    });
+    
+    musicAudio.addEventListener('timeupdate', () => {
+        if (musicAudio.duration) {
+            const pf = document.getElementById('progressFill');
+            const ct = document.getElementById('currentTime');
+            if (pf) pf.style.width = (musicAudio.currentTime / musicAudio.duration * 100) + '%';
+            if (ct) ct.textContent = formatTime(musicAudio.currentTime);
+            updateTrackDuration(currentTrackIndex, formatTime(musicAudio.duration));
+        }
+    });
+    
+    musicAudio.addEventListener('loadedmetadata', () => {
+        const tt = document.getElementById('totalTime');
+        if (tt) tt.textContent = formatTime(musicAudio.duration);
+        updateTrackDuration(currentTrackIndex, formatTime(musicAudio.duration));
+    });
+    
+    musicAudio.addEventListener('ended', () => {
+        if (repeatMode) {
+            musicAudio.currentTime = 0;
+            musicAudio.play();
+        } else {
+            playNextTrack();
+        }
+    });
+    
+    const musicVol = document.getElementById('musicVolume');
+    if (musicVol) {
+        musicVol.addEventListener('input', function(e) {
+            musicVolume = e.target.value / 100;
+            musicAudio.volume = musicVolume;
+            const mvv = document.getElementById('musicVolumeValue');
+            if (mvv) mvv.textContent = e.target.value + '%';
+            this.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${e.target.value}%, rgba(255,255,255,0.15) ${e.target.value}%, rgba(255,255,255,0.15) 100%)`;
+        });
+        
+        try {
+            const saved = sessionStorage.getItem('dragonSound_user_settings');
+            if (saved) {
+                const settings = JSON.parse(saved);
+                if (settings && settings.music_volume !== undefined) {
+                    musicVol.value = settings.music_volume;
+                    const mvv = document.getElementById('musicVolumeValue');
+                    if (mvv) mvv.textContent = settings.music_volume + '%';
+                    musicVol.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${settings.music_volume}%, rgba(255,255,255,0.15) ${settings.music_volume}%, rgba(255,255,255,0.15) 100%)`;
+                    musicVolume = settings.music_volume / 100;
+                    musicAudio.volume = musicVolume;
+                }
+            }
+        } catch (e) {}
+    }
+}
+
+function updateTrackDuration(index, duration) {
+    const items = document.querySelectorAll('.playlist-item-duration');
+    if (items[index]) items[index].textContent = duration;
+}
+
+function formatTime(s) {
+    if (isNaN(s)) return '--:--';
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+// ============ ГОРЯЧИЕ КЛАВИШИ ============
+function generateAvailableKeys() {
+    const keys = [];
+    for (let i = 0; i <= 9; i++) keys.push(String(i));
+    for (let i = 65; i <= 90; i++) keys.push(String.fromCharCode(i).toLowerCase());
+    const specialKeys = [
+        '`', '-', '=', '[', ']', '\\', ';', "'", ',', '.', '/',
+        '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+',
+        '{', '}', '|', ':', '"', '<', '>', '?',
+        'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
+        'Insert', 'Home', 'PageUp', 'PageDown', 'End', 'Delete'
+    ];
+    keys.push(...specialKeys);
+    return keys;
+}
+
+function loadKeyBindings() {
+    try {
+        const saved = sessionStorage.getItem('dragonSound_keyBindings');
+        if (saved) {
+            keyBindings = JSON.parse(saved);
+        } else {
+            keyBindings = {};
+            saveKeyBindingsSession();
+        }
+        availableKeys = generateAvailableKeys();
+        keyBindingsLoaded = true;
+    } catch (e) {
+        console.error('Ошибка загрузки горячих клавиш:', e);
+    }
+}
+
+function saveKeyBindingsSession() {
+    try {
+        sessionStorage.setItem('dragonSound_keyBindings', JSON.stringify(keyBindings));
+    } catch (e) {
+        console.error('Ошибка сохранения горячих клавиш:', e);
+    }
+    autoSaveKeyBindingsToServer();
+}
+
+// Горячие клавиши раньше сохранялись только в sessionStorage. При следующей
+// загрузке страницы loadUserSettings() подтягивает настройки с сервера и
+// перезаписывает ими keyBindings (даже пустым объектом — он "истинный" в JS),
+// поэтому несохранённая вручную привязка бесследно исчезала. Тихо досылаем
+// изменение на сервер сразу, чтобы клавиши не "переставали работать" сами по себе.
+let __keyBindingsSyncTimer = null;
+function autoSaveKeyBindingsToServer() {
+    if (!isLoggedIn || typeof isLoggedIn !== 'function' || !isLoggedIn()) return;
+    if (__keyBindingsSyncTimer) clearTimeout(__keyBindingsSyncTimer);
+    __keyBindingsSyncTimer = setTimeout(async () => {
+        try {
+            const userData = getUserData();
+            const token = getSessionToken();
+            if (!userData.email || !token) return;
+            await fetch('api.php?action=save_settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: userData.email,
+                    session_token: token,
+                    settings: { keyBindings: keyBindings, keyVolumes: keyVolumes }
+                })
+            });
+        } catch (e) {
+            console.warn('⚠️ Не удалось синхронизировать горячие клавиши с сервером:', e);
+        }
+    }, 600);
+}
+
+// ===== ИЗБРАННЫЕ ЗВУКИ =====
+function loadFavorites() {
+    try {
+        const saved = sessionStorage.getItem('dragonSound_favorites');
+        favorites = saved ? JSON.parse(saved) : [];
+        if (!Array.isArray(favorites)) favorites = [];
+    } catch (e) {
+        favorites = [];
+    }
+}
+
+let __favoritesSyncTimer = null;
+function saveFavoritesSession() {
+    try {
+        sessionStorage.setItem('dragonSound_favorites', JSON.stringify(favorites));
+    } catch (e) {
+        console.error('Ошибка сохранения избранного:', e);
+    }
+    if (!isLoggedIn || typeof isLoggedIn !== 'function' || !isLoggedIn()) return;
+    if (__favoritesSyncTimer) clearTimeout(__favoritesSyncTimer);
+    __favoritesSyncTimer = setTimeout(async () => {
+        try {
+            const userData = getUserData();
+            const token = getSessionToken();
+            if (!userData.email || !token) return;
+            await fetch('api.php?action=save_settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: userData.email,
+                    session_token: token,
+                    settings: { favorites: favorites }
+                })
+            });
+        } catch (e) {
+            console.warn('⚠️ Не удалось синхронизировать избранное с сервером:', e);
+        }
+    }, 600);
+}
+
+function loadKeyVolumes() {
+    try {
+        const saved = sessionStorage.getItem('dragonSound_keyVolumes');
+        if (saved) {
+            keyVolumes = JSON.parse(saved);
+        } else {
+            keyVolumes = {};
+        }
+    } catch (e) {
+        keyVolumes = {};
+    }
+}
+
+function saveKeyVolumesSession() {
+    try {
+        sessionStorage.setItem('dragonSound_keyVolumes', JSON.stringify(keyVolumes));
+    } catch (e) {
+        console.error('Ошибка сохранения громкостей клавиш:', e);
+    }
+    autoSaveKeyBindingsToServer();
+}
+
+function getSoundIdByKey(key) {
+    const normalizedKey = normalizeKey(key);
+    const soundId = keyBindings[normalizedKey];
+    if (soundId && audioObjects[soundId]) {
+        return soundId;
+    }
+    return null;
+}
+
+function showKeyBindingNotification(message) {
+    let notification = document.getElementById('keyBindingNotification');
+    if (!notification) {
+        notification = document.createElement('div');
+        notification.id = 'keyBindingNotification';
+        notification.style.cssText = `
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(20,18,15,0.95);
+            backdrop-filter: blur(10px);
+            padding: 14px 28px;
+            border-radius: 12px;
+            border: 2px solid rgba(255,255,255,0.15);
+            color: var(--text-primary);
+            font-family: 'Cinzel', serif;
+            font-size: 0.9em;
+            z-index: 10001;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+            transition: opacity 0.3s, transform 0.3s;
+            opacity: 0;
+            transform: translateX(-50%) translateY(20px);
+            pointer-events: none;
+            text-align: center;
+            max-width: 90%;
+            font-weight: 500;
+            letter-spacing: 0.3px;
+        `;
+        document.body.appendChild(notification);
+    }
+    
+    let borderColor = 'rgba(255,255,255,0.15)';
+    let bgColor = 'rgba(20,18,15,0.95)';
+    if (message.includes('⛔') || message.includes('ЗАПРЕЩЕНА')) {
+        borderColor = '#e74c3c';
+        bgColor = 'rgba(40, 20, 20, 0.95)';
+    } else if (message.includes('⚠️') || message.includes('занята')) {
+        borderColor = '#f39c12';
+        bgColor = 'rgba(40, 30, 15, 0.95)';
+    } else if (message.includes('✅')) {
+        borderColor = '#27ae60';
+        bgColor = 'rgba(20, 40, 25, 0.95)';
+    }
+    
+    notification.style.borderColor = borderColor;
+    notification.style.background = bgColor;
+    notification.textContent = message;
+    notification.style.opacity = '1';
+    notification.style.transform = 'translateX(-50%) translateY(0)';
+    
+    clearTimeout(notification._timeout);
+    notification._timeout = setTimeout(() => {
+        notification.style.opacity = '0';
+        notification.style.transform = 'translateX(-50%) translateY(20px)';
+    }, 4000);
+}
+
+function handleKeyPress(e) {
+    // === РЕЖИМ НАЗНАЧЕНИЯ КЛАВИШ ===
+    if (keyBindingMode) {
+        e.preventDefault();
+        e.stopPropagation();
+        let key = e.key;
+        if (key === ' ') key = 'space';
+        
+        if (key === 'Escape') {
+            keyBindingMode = false;
+            if (bindingTarget) {
+                const card = document.getElementById(`card-${bindingTarget}`);
+                if (card) {
+                    card.style.boxShadow = '';
+                    card.style.borderColor = '';
+                    card.style.borderColor = '#e74c3c';
+                    card.style.boxShadow = '0 0 20px rgba(231, 76, 60, 0.3)';
+                    setTimeout(() => {
+                        card.style.borderColor = '';
+                        card.style.boxShadow = '';
+                    }, 800);
+                }
+                bindingTarget = null;
+            }
+            showKeyBindingNotification('❌ Назначение отменено (Esc)');
+            renderKeyBindingsUI();
+            return;
+        }
+        
+        let normalizedKey = key;
+        if (key === ' ') normalizedKey = 'space';
+        else if (key === 'Escape') normalizedKey = 'esc';
+        else if (key === 'Enter') normalizedKey = 'enter';
+        else if (key === 'Backspace') normalizedKey = 'backspace';
+        else if (key === 'Tab') normalizedKey = 'tab';
+        else if (key === 'CapsLock') normalizedKey = 'capslock';
+        else if (key === 'Shift') normalizedKey = 'shift';
+        else if (key === 'Control') normalizedKey = 'ctrl';
+        else if (key === 'Alt') normalizedKey = 'alt';
+        else if (key === 'Meta') normalizedKey = 'meta';
+        else if (key === 'ArrowUp') normalizedKey = '↑';
+        else if (key === 'ArrowDown') normalizedKey = '↓';
+        else if (key === 'ArrowLeft') normalizedKey = '←';
+        else if (key === 'ArrowRight') normalizedKey = '→';
+        else if (key === 'Home') normalizedKey = 'home';
+        else if (key === 'End') normalizedKey = 'end';
+        else if (key === 'PageUp') normalizedKey = 'pageup';
+        else if (key === 'PageDown') normalizedKey = 'pagedown';
+        else if (key === 'Insert') normalizedKey = 'insert';
+        else if (key === 'Delete') normalizedKey = 'delete';
+        else if (key.startsWith('F') && key.length <= 3) normalizedKey = key;
+        
+        const engKey = normalizeRusKey(normalizedKey);
+        
+        if (!isKeyAllowed(engKey)) {
+            const displayName = getKeyDisplayName(engKey);
+            showKeyBindingNotification(`⛔ Клавиша "${displayName || key}" ЗАПРЕЩЕНА! Разрешены: буквы, цифры, стрелки и F1-F12.`);
+            if (bindingTarget) {
+                const card = document.getElementById(`card-${bindingTarget}`);
+                if (card) {
+                    card.style.borderColor = '#e74c3c';
+                    card.style.boxShadow = '0 0 20px rgba(231, 76, 60, 0.4)';
+                    setTimeout(() => {
+                        card.style.borderColor = '';
+                        card.style.boxShadow = '';
+                    }, 1000);
+                }
+            }
+            keyBindingMode = false;
+            if (bindingTarget) {
+                const card = document.getElementById(`card-${bindingTarget}`);
+                if (card) {
+                    card.style.boxShadow = '';
+                    card.style.borderColor = '';
+                }
+                bindingTarget = null;
+            }
+            renderKeyBindingsUI();
+            return;
+        }
+        
+        const musicKeys = window._userHotkeys || {};
+        let isMusicKeyTaken = false;
+        let musicAction = '';
+        for (let action in musicKeys) {
+            if (normalizeRusKey(musicKeys[action]) === engKey) {
+                isMusicKeyTaken = true;
+                musicAction = action;
+                break;
+            }
+        }
+        
+        if (isMusicKeyTaken) {
+            const actionNames = {
+                'pause_all': 'Пауза всех',
+                'stop_all': 'Остановить всё',
+                'next_track': 'Следующий трек',
+                'prev_track': 'Предыдущий трек',
+                'volume_up': 'Громкость +',
+                'volume_down': 'Громкость -'
+            };
+            const actionName = actionNames[musicAction] || musicAction;
+            showKeyBindingNotification(`⚠️ Клавиша "${getKeyDisplayName(engKey)}" уже используется в музыке (${actionName})`);
+            if (bindingTarget) {
+                const card = document.getElementById(`card-${bindingTarget}`);
+                if (card) {
+                    card.style.borderColor = '#f39c12';
+                    card.style.boxShadow = '0 0 20px rgba(243, 156, 18, 0.4)';
+                    setTimeout(() => {
+                        card.style.borderColor = '';
+                        card.style.boxShadow = '';
+                    }, 1000);
+                }
+            }
+            keyBindingMode = false;
+            if (bindingTarget) {
+                const card = document.getElementById(`card-${bindingTarget}`);
+                if (card) {
+                    card.style.boxShadow = '';
+                    card.style.borderColor = '';
+                }
+                bindingTarget = null;
+            }
+            renderKeyBindingsUI();
+            return;
+        }
+        
+        const isSoundKeyTaken = Object.keys(keyBindings).some(k => {
+            return normalizeRusKey(k) === engKey && keyBindings[k] !== bindingTarget;
+        });
+        
+        if (isSoundKeyTaken) {
+            showKeyBindingNotification(`⚠️ Клавиша "${getKeyDisplayName(engKey)}" уже используется на другом звуке`);
+            if (bindingTarget) {
+                const card = document.getElementById(`card-${bindingTarget}`);
+                if (card) {
+                    card.style.borderColor = '#f39c12';
+                    card.style.boxShadow = '0 0 20px rgba(243, 156, 18, 0.4)';
+                    setTimeout(() => {
+                        card.style.borderColor = '';
+                        card.style.boxShadow = '';
+                    }, 1000);
+                }
+            }
+            keyBindingMode = false;
+            if (bindingTarget) {
+                const card = document.getElementById(`card-${bindingTarget}`);
+                if (card) {
+                    card.style.boxShadow = '';
+                    card.style.borderColor = '';
+                }
+                bindingTarget = null;
+            }
+            renderKeyBindingsUI();
+            return;
+        }
+        
+        if (bindingTarget) {
+            for (let k in keyBindings) {
+                if (keyBindings[k] === bindingTarget) {
+                    delete keyBindings[k];
+                }
+            }
+            keyBindings[engKey] = bindingTarget;
+            saveKeyBindingsSession();
+            
+            if (keyVolumes[engKey] !== undefined) {
+                const vol = keyVolumes[engKey];
+                const soundId = bindingTarget;
+                if (audioObjects[soundId]) {
+                    audioObjects[soundId].volume = vol;
+                    if (audioObjects[soundId].audio) {
+                        audioObjects[soundId].audio.volume = vol / 100;
+                    }
+                    const card = document.getElementById(`card-${soundId}`);
+                    if (card) {
+                        const slider = card.querySelector(`#vol-${soundId}`);
+                        const volDisplay = card.querySelector(`#val-${soundId}`);
+                        if (slider) {
+                            slider.value = vol;
+                            slider.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${vol}%, rgba(255,255,255,0.15) ${vol}%, rgba(255,255,255,0.15) 100%)`;
+                        }
+                        if (volDisplay) volDisplay.textContent = vol + '%';
+                    }
+                }
+            }
+            
+            const card = document.getElementById(`card-${bindingTarget}`);
+            if (card) {
+                card.style.boxShadow = '';
+                card.style.borderColor = '';
+                card.style.borderColor = '#27ae60';
+                card.style.boxShadow = '0 0 20px rgba(39, 174, 96, 0.3)';
+                setTimeout(() => {
+                    card.style.borderColor = '';
+                    card.style.boxShadow = '';
+                }, 800);
+            }
+            
+            keyBindingMode = false;
+            const displayName = getKeyDisplayName(engKey);
+            showKeyBindingNotification(`✅ Клавиша "${displayName}" назначена на звук`);
+            renderKeyBindingsUI();
+            updateAllKeyDisplays();
+            bindingTarget = null;
+        }
+        return;
+    }
+    
+    // === ГОРЯЧИЕ КЛАВИШИ ДЛЯ МУЗЫКИ ===
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+        return;
+    }
+    
+    let key = e.key;
+    const engKey = normalizeRusKey(key);
+    
+    let userHotkeys = window._userHotkeys || {};
+    
+    if (Object.keys(userHotkeys).length === 0) {
+        try {
+            const saved = sessionStorage.getItem('dragonSound_keyBindings');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (parsed) {
+                    userHotkeys = {
+                        'pause_all': 'p',
+                        'stop_all': 'o',
+                        'next_track': 'ArrowRight',
+                        'prev_track': 'ArrowLeft',
+                        'volume_up': 'ArrowUp',
+                        'volume_down': 'ArrowDown'
+                    };
+                    window._userHotkeys = userHotkeys;
+                }
+            }
+        } catch(e) {}
+    }
+    
+    if (Object.keys(userHotkeys).length === 0) {
+        userHotkeys = {
+            'pause_all': 'p',
+            'stop_all': 'o',
+            'next_track': 'ArrowRight',
+            'prev_track': 'ArrowLeft',
+            'volume_up': 'ArrowUp',
+            'volume_down': 'ArrowDown'
+        };
+        window._userHotkeys = userHotkeys;
+    }
+    
+    const isMusicKey = Object.values(userHotkeys).some(val => normalizeRusKey(val) === engKey);
+    
+    if (isMusicKey) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    if (userHotkeys.pause_all && normalizeRusKey(userHotkeys.pause_all) === engKey) {
+        if (activeMusicSource !== 'local') {
+            const action = externalMusicPaused ? 'play' : 'pause';
+            if (controlExternalMusic(action)) {
+                externalMusicPaused = action === 'pause';
+                showKeyBindingNotification(externalMusicPaused ? 'Пауза внешней музыки' : 'Продолжить внешнюю музыку');
+            }
+        }
+        pauseAllSoundsAndMusic();
+        return;
+    }
+    
+    if (userHotkeys.stop_all && normalizeRusKey(userHotkeys.stop_all) === engKey) {
+        if (activeMusicSource !== 'local') {
+            controlExternalMusic('stop');
+            externalMusicPaused = true;
+        }
+        stopAllSoundsAndMusic();
+        return;
+    }
+    
+    if (userHotkeys.next_track && normalizeRusKey(userHotkeys.next_track) === engKey) {
+        if (activeMusicSource !== 'local') {
+            if (controlExternalMusic('next')) showKeyBindingNotification('Следующий трек');
+            else showKeyBindingNotification('VK не разрешает переключать треки горячей клавишей');
+            return;
+        }
+        const nextBtn = document.getElementById('nextBtn');
+        if (nextBtn) {
+            nextBtn.click();
+            showKeyBindingNotification('⏭ Следующий трек');
+        }
+        return;
+    }
+    
+    if (userHotkeys.prev_track && normalizeRusKey(userHotkeys.prev_track) === engKey) {
+        if (activeMusicSource !== 'local') {
+            if (controlExternalMusic('previous')) showKeyBindingNotification('Предыдущий трек');
+            else showKeyBindingNotification('VK не разрешает переключать треки горячей клавишей');
+            return;
+        }
+        const prevBtn = document.getElementById('prevBtn');
+        if (prevBtn) {
+            prevBtn.click();
+            showKeyBindingNotification('⏮ Предыдущий трек');
+        }
+        return;
+    }
+    
+    if (userHotkeys.volume_up && normalizeRusKey(userHotkeys.volume_up) === engKey) {
+        const slider = document.getElementById('musicVolume');
+        if (slider) {
+            const newVal = Math.min(100, parseInt(slider.value) + 5);
+            slider.value = newVal;
+            slider.dispatchEvent(new Event('input'));
+            if (activeMusicSource !== 'local' && !controlExternalMusic('volume', newVal)) {
+                showKeyBindingNotification('VK не разрешает менять громкость горячей клавишей');
+                return;
+            }
+            try {
+                const settings = JSON.parse(sessionStorage.getItem('dragonSound_user_settings') || '{}');
+                settings.music_volume = newVal;
+                sessionStorage.setItem('dragonSound_user_settings', JSON.stringify(settings));
+            } catch (err) {}
+            showKeyBindingNotification(`🔊 Громкость: ${newVal}%`);
+        }
+        return;
+    }
+    
+    if (userHotkeys.volume_down && normalizeRusKey(userHotkeys.volume_down) === engKey) {
+        const slider = document.getElementById('musicVolume');
+        if (slider) {
+            const newVal = Math.max(0, parseInt(slider.value) - 5);
+            slider.value = newVal;
+            slider.dispatchEvent(new Event('input'));
+            if (activeMusicSource !== 'local' && !controlExternalMusic('volume', newVal)) {
+                showKeyBindingNotification('VK не разрешает менять громкость горячей клавишей');
+                return;
+            }
+            try {
+                const settings = JSON.parse(sessionStorage.getItem('dragonSound_user_settings') || '{}');
+                settings.music_volume = newVal;
+                sessionStorage.setItem('dragonSound_user_settings', JSON.stringify(settings));
+            } catch (err) {}
+            showKeyBindingNotification(`🔈 Громкость: ${newVal}%`);
+        }
+        return;
+    }
+    
+    const normalizedKey = normalizeKey(key);
+    const soundId = getSoundIdByKey(normalizedKey);
+    if (soundId) {
+        toggleSound(soundId);
+        const wrapper = document.querySelector(`.key-bind-wrapper[data-sound="${soundId}"]`);
+        if (wrapper) {
+            const btn = wrapper.querySelector('.key-bind-btn');
+            if (btn) {
+                btn.classList.add('pressed');
+                setTimeout(() => {
+                    btn.classList.remove('pressed');
+                }, 300);
+            }
+        }
+    }
+}
+
+// ============ ИЗМЕНЕНИЕ ГРОМКОСТИ КЛАВИШИ ============
+window.changeKeyVolume = function(key, value) {
+    const vol = parseInt(value);
+    if (isNaN(vol) || vol < 0 || vol > 100) return;
+    
+    const soundId = keyBindings[key];
+    if (!soundId || !audioObjects[soundId]) return;
+    
+    console.log(`🔊 Изменение громкости для клавиши "${key}": ${vol}% (звук: ${soundId})`);
+    
+    const data = audioObjects[soundId];
+    data.volume = vol;
+    if (data.audio) {
+        data.audio.volume = vol / 100;
+    }
+    
+    const card = document.getElementById(`card-${soundId}`);
+    if (card) {
+        const slider = card.querySelector(`#vol-${soundId}`);
+        const volDisplay = card.querySelector(`#val-${soundId}`);
+        if (slider) {
+            slider.value = vol;
+            slider.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${vol}%, rgba(255,255,255,0.15) ${vol}%, rgba(255,255,255,0.15) 100%)`;
+        }
+        if (volDisplay) {
+            volDisplay.textContent = vol + '%';
+        }
+    }
+    
+    keyVolumes[key] = vol;
+    window._currentKeyVolumes = keyVolumes;
+    saveKeyVolumesSession();
+    
+    const container = document.getElementById('keyBindingsContainer');
+    if (container) {
+        const volDisplay = container.querySelector(`.vol-value[data-key="${key}"]`);
+        if (volDisplay) {
+            volDisplay.textContent = vol + '%';
+        }
+        const slider = container.querySelector(`.key-volume-slider[data-key="${key}"]`);
+        if (slider) {
+            slider.value = vol;
+            slider.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${vol}%, rgba(255,255,255,0.15) ${vol}%, rgba(255,255,255,0.15) 100%)`;
+        }
+    }
+};
+
+// ============ РЕНДЕР ГОРЯЧИХ КЛАВИШ ============
+function renderKeyBindingsUI() {
+    const container = document.getElementById('keyBindingsContainer');
+    if (!container) return;
+    
+    const soundItems = [];
+    for (let soundId in audioObjects) {
+        const card = document.getElementById(`card-${soundId}`);
+        if (card) {
+            const name = card.querySelector('.sound-card-name')?.textContent || soundId;
+            soundItems.push({ id: soundId, name });
+        }
+    }
+    
+    const musicKeys = ['pause_all', 'stop_all', 'next_track', 'prev_track', 'volume_up', 'volume_down'];
+    
+    const assignedKeys = Object.keys(keyBindings).filter(k => {
+        const soundId = keyBindings[k];
+        return !musicKeys.includes(k) && soundId && audioObjects[soundId];
+    });
+    
+    const totalKeys = availableKeys.length;
+    
+    container.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:4px;padding:5px 0;">
+            ${assignedKeys.length === 0 ? `
+                <div class="key-bind-empty">
+                    <span>⌨</span>
+                    Нет назначенных клавиш для звуков.<br>
+                    Нажмите <strong style="color:var(--accent);">⋯</strong> на карточке звука для назначения
+                </div>
+            ` : `
+                <div style="font-size:0.65em;color:var(--text-secondary);margin-bottom:4px;opacity:0.5;padding:0 4px;">
+                    Клавиши для звуков (${assignedKeys.length}):
+                </div>
+                ${assignedKeys.map(key => {
+                    const soundId = keyBindings[key];
+                    const soundName = soundId ? soundItems.find(s => s.id === soundId)?.name || '🔊' : '—';
+                    const displayName = getKeyDisplayName(key);
+                    let currentVolume = 50;
+                    if (soundId && audioObjects[soundId]) {
+                        currentVolume = audioObjects[soundId].volume;
+                    }
+                    return `
+                        <div class="key-binding-row" data-key="${key}" data-sound="${soundId || ''}">
+                            <div class="key-display">${displayName.length > 4 ? displayName.substring(0, 4) : displayName}</div>
+                            <span class="key-name" title="${soundName}">${soundName}</span>
+                            <div class="key-volume">
+                                <span class="vol-icon">🔈</span>
+                                <input type="range" min="0" max="100" value="${currentVolume}" 
+                                       data-key="${key}"
+                                       class="key-volume-slider">
+                                <span class="vol-value" data-key="${key}">${currentVolume}%</span>
+                            </div>
+                            <button class="btn-unbind" onclick="unbindKey('${key}')" title="Отвязать клавишу">✕</button>
+                        </div>
+                    `;
+                }).join('')}
+            `}
+        </div>
+        <div class="key-bind-actions">
+            <button class="btn btn-reset" onclick="clearAllKeyBindings()">🗑 Сбросить все</button>
+            <button class="btn btn-help" onclick="showKeyBindingHelp()">❓ Помощь</button>
+            <span class="key-count">${assignedKeys.length} / ${totalKeys}</span>
+        </div>
+    `;
+    
+    container.querySelectorAll('.key-volume-slider').forEach(slider => {
+        const key = slider.dataset.key;
+        const value = slider.value;
+        
+        slider.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${value}%, rgba(255,255,255,0.15) ${value}%, rgba(255,255,255,0.15) 100%)`;
+        
+        slider.addEventListener('input', function(e) {
+            e.stopPropagation();
+            const newValue = this.value;
+            const key = this.dataset.key;
+            
+            this.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${newValue}%, rgba(255,255,255,0.15) ${newValue}%, rgba(255,255,255,0.15) 100%)`;
+            
+            const volDisplay = this.closest('.key-volume').querySelector('.vol-value');
+            if (volDisplay) {
+                volDisplay.textContent = newValue + '%';
+            }
+            
+            changeKeyVolume(key, newValue);
+        });
+        
+        slider.addEventListener('mousedown', function(e) {
+            e.stopPropagation();
+        });
+        
+        slider.addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+    });
+}
+
+// ============ ОБНОВЛЕНИЕ UI ГРОМКОСТИ ============
+function updateKeyVolumeUI(key, value) {
+    const container = document.getElementById('keyBindingsContainer');
+    if (!container) return;
+    
+    const vol = parseInt(value);
+    if (isNaN(vol)) return;
+    
+    const volDisplay = container.querySelector(`.vol-value[data-key="${key}"]`);
+    if (volDisplay) {
+        volDisplay.textContent = vol + '%';
+    }
+    
+    const slider = container.querySelector(`.key-volume-slider[data-key="${key}"]`);
+    if (slider) {
+        slider.value = vol;
+        slider.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${vol}%, rgba(255,255,255,0.15) ${vol}%, rgba(255,255,255,0.15) 100%)`;
+    }
+}
+
+function updateAllKeyDisplays() {
+    document.querySelectorAll('.sound-card').forEach(card => {
+        if (card._updateKeyDisplay) {
+            card._updateKeyDisplay();
+        }
+    });
+}
+
+window.startKeyBinding = function(soundId) {
+    if (!isLoggedIn()) {
+        showAuthRequiredModal('Чтобы назначать горячие клавиши на звуки, нужно зарегистрироваться — иначе привязки будут слетать при каждом заходе на сайт.');
+        return;
+    }
+    if (keyBindingMode) {
+        showKeyBindingNotification('❌ Сначала завершите текущее назначение (Esc)');
+        return;
+    }
+    keyBindingMode = true;
+    bindingTarget = soundId;
+    const soundName = document.getElementById(`card-${soundId}`)?.querySelector('.sound-card-name')?.textContent || 'звук';
+    const card = document.getElementById(`card-${soundId}`);
+    if (card) {
+        card.style.boxShadow = '0 0 30px rgba(255,69,0,0.4)';
+        card.style.borderColor = 'var(--accent)';
+    }
+    showKeyBindingNotification(`🎯 Нажмите ЛЮБУЮ клавишу для "${soundName}" (Esc - отмена)`);
+    renderKeyBindingsUI();
+};
+
+window.unbindKey = function(key) {
+    const soundId = keyBindings[key];
+    
+    const engKey = normalizeRusKey(key);
+    const keysToDelete = Object.keys(keyBindings).filter(k => normalizeRusKey(k) === engKey);
+    keysToDelete.forEach(k => {
+        delete keyBindings[k];
+    });
+    
+    saveKeyBindingsSession();
+    
+    const volumesToDelete = Object.keys(keyVolumes).filter(k => normalizeRusKey(k) === engKey);
+    volumesToDelete.forEach(k => {
+        delete keyVolumes[k];
+    });
+    saveKeyVolumesSession();
+    
+    renderKeyBindingsUI();
+    updateAllKeyDisplays();
+    
+    if (soundId) {
+        const card = document.getElementById(`card-${soundId}`);
+        if (card) {
+            card.style.boxShadow = '';
+            card.style.borderColor = '';
+        }
+        if (audioObjects[soundId]) {
+            audioObjects[soundId].volume = 50;
+            if (audioObjects[soundId].audio) {
+                audioObjects[soundId].audio.volume = 0.5;
+            }
+            const slider = card.querySelector(`#vol-${soundId}`);
+            const volDisplay = card.querySelector(`#val-${soundId}`);
+            if (slider) {
+                slider.value = 50;
+                slider.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) 50%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0.15) 100%)`;
+            }
+            if (volDisplay) volDisplay.textContent = '50%';
+        }
+    }
+    
+    showKeyBindingNotification(`✅ Клавиша "${getKeyDisplayName(key)}" отвязана`);
+};
+
+window.clearAllKeyBindings = function() {
+    if (!confirm('Сбросить все назначенные клавиши?')) return;
+    
+    const soundIds = Object.values(keyBindings);
+    
+    keyBindings = {};
+    saveKeyBindingsSession();
+    
+    keyVolumes = {};
+    saveKeyVolumesSession();
+    
+    renderKeyBindingsUI();
+    updateAllKeyDisplays();
+    
+    soundIds.forEach(soundId => {
+        if (soundId) {
+            const card = document.getElementById(`card-${soundId}`);
+            if (card) {
+                card.style.boxShadow = '';
+                card.style.borderColor = '';
+            }
+            if (audioObjects[soundId]) {
+                audioObjects[soundId].volume = 50;
+                if (audioObjects[soundId].audio) {
+                    audioObjects[soundId].audio.volume = 0.5;
+                }
+                const slider = card.querySelector(`#vol-${soundId}`);
+                const volDisplay = card.querySelector(`#val-${soundId}`);
+                if (slider) {
+                    slider.value = 50;
+                    slider.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) 50%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0.15) 100%)`;
+                }
+                if (volDisplay) volDisplay.textContent = '50%';
+            }
+        }
+    });
+    
+    showKeyBindingNotification('✅ Все клавиши сброшены');
+};
+
+window.showKeyBindingHelp = function() {
+    showKeyBindingNotification(
+        '⌨ Нажмите ⋯ на карточке звука\n' +
+        'Затем нажмите любую клавишу на клавиатуре\n' +
+        'Для отмены нажмите Esc'
+    );
+};
+
+window.toggleKeyBindings = function() {
+    const container = document.getElementById('keyBindingsContainer');
+    const toggle = document.getElementById('keyBindingsToggle');
+    if (container) {
+        container.classList.toggle('collapsed');
+        if (toggle) {
+            toggle.textContent = container.classList.contains('collapsed') ? '▶' : '▼';
+        }
+    }
+};
+
+function addKeyBindingButton(card, soundId) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'key-bind-wrapper';
+    wrapper.setAttribute('data-sound', soundId);
+    
+    const btn = document.createElement('button');
+    btn.className = 'key-bind-btn';
+    btn.setAttribute('data-sound', soundId);
+    
+    const keyText = document.createElement('span');
+    keyText.className = 'key-text empty';
+    keyText.textContent = '⋯';
+    
+    const tooltip = document.createElement('span');
+    tooltip.className = 'key-tooltip';
+    tooltip.textContent = 'Назначить клавишу';
+    
+    btn.appendChild(keyText);
+    btn.appendChild(tooltip);
+    wrapper.appendChild(btn);
+    
+    function updateKeyDisplay() {
+        const key = Object.keys(keyBindings).find(k => keyBindings[k] === soundId);
+        if (key) {
+            const displayName = getKeyDisplayName(key);
+            keyText.textContent = displayName.length > 3 ? displayName.substring(0, 3) : displayName;
+            keyText.className = 'key-text';
+            btn.classList.add('has-key');
+            tooltip.textContent = `Клавиша: ${displayName} (нажмите для смены)`;
+        } else {
+            keyText.textContent = '⋯';
+            keyText.className = 'key-text empty';
+            btn.classList.remove('has-key');
+            tooltip.textContent = 'Назначить клавишу';
+        }
+    }
+    
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        window.startKeyBinding(soundId);
+    });
+    
+    btn.addEventListener('mouseenter', function() {
+        if (!btn.classList.contains('has-key')) {
+            this.style.borderColor = 'rgba(255,69,0,0.3)';
+        }
+    });
+    
+    btn.addEventListener('mouseleave', function() {
+        if (!btn.classList.contains('has-key')) {
+            this.style.borderColor = 'rgba(255,255,255,0.12)';
+        }
+    });
+    
+    card._updateKeyDisplay = updateKeyDisplay;
+    card.appendChild(wrapper);
+    updateKeyDisplay();
+}
+
+// ============ АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ ============
+function getConfigHash() {
+    if (!config) return '';
+    const importantData = {
+        categories: config.categories,
+        sounds: config.sounds,
+        music: config.music
+    };
+    return JSON.stringify(importantData);
+}
+
+function showUpdateNotification(message) {
+    let notification = document.getElementById('updateNotification');
+    if (!notification) {
+        notification = document.createElement('div');
+        notification.id = 'updateNotification';
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(39, 174, 96, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 12px 24px;
+            border-radius: 10px;
+            color: white;
+            font-family: 'Cinzel', serif;
+            font-size: 0.85em;
+            z-index: 10000;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: opacity 0.5s, transform 0.5s;
+            opacity: 0;
+            transform: translateY(-20px);
+            pointer-events: none;
+        `;
+        document.body.appendChild(notification);
+    }
+    notification.textContent = message;
+    notification.style.opacity = '1';
+    notification.style.transform = 'translateY(0)';
+    clearTimeout(notification._timeout);
+    notification._timeout = setTimeout(() => {
+        notification.style.opacity = '0';
+        notification.style.transform = 'translateY(-20px)';
+    }, 3000);
+}
+
+function showUpdateNotificationWithButton() {
+    if (updateNotificationShown) return;
+    updateNotificationShown = true;
+    
+    let notification = document.getElementById('updateNotification');
+    if (!notification) {
+        notification = document.createElement('div');
+        notification.id = 'updateNotification';
+        notification.style.cssText = `
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(20,18,15,0.95);
+            backdrop-filter: blur(10px);
+            padding: 16px 24px;
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-family: 'Cinzel', serif;
+            font-size: 0.85em;
+            z-index: 10000;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,69,0,0.3);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            max-width: 90%;
+            transition: opacity 0.5s, transform 0.5s;
+            opacity: 0;
+            transform: translateX(-50%) translateY(20px);
+        `;
+        
+        notification.innerHTML = `
+            <span>🔄</span>
+            <span>Доступны новые настройки!</span>
+            <button onclick="applyUpdate()" style="
+                background: var(--accent);
+                color: white;
+                border: none;
+                padding: 6px 16px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-family: 'Cinzel', serif;
+                font-size: 0.8em;
+                transition: all 0.3s;
+            ">Обновить</button>
+            <button onclick="dismissUpdate()" style="
+                background: transparent;
+                color: var(--text-secondary);
+                border: none;
+                cursor: pointer;
+                font-size: 1.2em;
+                padding: 0 4px;
+            ">✕</button>
+        `;
+        
+        document.body.appendChild(notification);
+    }
+    
+    notification.style.opacity = '1';
+    notification.style.transform = 'translateX(-50%) translateY(0)';
+}
+
+window.dismissUpdate = function() {
+    updateNotificationShown = false;
+    const notification = document.getElementById('updateNotification');
+    if (notification) {
+        notification.style.opacity = '0';
+        notification.style.transform = 'translateX(-50%) translateY(20px)';
+        setTimeout(() => {
+            if (notification.parentNode) notification.parentNode.removeChild(notification);
+        }, 500);
+    }
+};
+
+window.applyUpdate = function() {
+    if (window._pendingConfig) {
+        const oldKeyBindings = JSON.parse(JSON.stringify(keyBindings));
+        const oldKeyVolumes = JSON.parse(JSON.stringify(keyVolumes));
+        
+        config = window._pendingConfig;
+        window._pendingConfig = null;
+        
+        keyBindings = oldKeyBindings;
+        keyVolumes = oldKeyVolumes;
+        saveKeyBindingsSession();
+        saveKeyVolumesSession();
+        
+        stopAllSounds();
+        renderCategories();
+        renderSounds();
+        loadPlaylist(currentCategory);
+        applyBackground();
+        
+        setTimeout(() => {
+            updateAllKeyDisplays();
+            renderKeyBindingsUI();
+        }, 100);
+        
+        updateNotificationShown = false;
+        const notification = document.getElementById('updateNotification');
+        if (notification) {
+            notification.style.opacity = '0';
+            notification.style.transform = 'translateX(-50%) translateY(20px)';
+            setTimeout(() => {
+                if (notification.parentNode) notification.parentNode.removeChild(notification);
+            }, 500);
+        }
+        
+        lastConfigHash = getConfigHash();
+        
+        showUpdateNotification('✅ Настройки обновлены!');
+    }
+};
+
+async function checkForUpdatesWithNotification() {
+    // Не нагружаем PHP в фоновой/свёрнутой вкладке.
+    if (document.hidden) return;
+    try {
+        const response = await fetch('config_sync.php?' + Date.now(), {
+            method: 'GET',
+            headers: { 'Cache-Control': 'no-cache' }
+        });
+        
+        if (response.ok) {
+            const newConfig = await response.json();
+            if (newConfig && newConfig.categories) {
+                const newHash = JSON.stringify({
+                    categories: newConfig.categories,
+                    sounds: newConfig.sounds,
+                    music: newConfig.music
+                });
+                
+                if (newHash !== lastConfigHash) {
+                    console.log('🔄 Обнаружены изменения! Показываем уведомление');
+                    lastConfigHash = newHash;
+                    window._pendingConfig = newConfig;
+                    showUpdateNotificationWithButton();
+                }
+            }
+        }
+    } catch (e) {}
+}
+
+function initSSE() {
+    if (typeof EventSource === 'undefined') {
+        console.log('⚠️ SSE не поддерживается, используем polling');
+        startPolling();
+        return;
+    }
+    
+    try {
+        if (sseConnection) {
+            sseConnection.close();
+        }
+        
+        sseConnection = new EventSource('sse.php');
+        isSSEConnected = true;
+        
+        sseConnection.addEventListener('update', function(event) {
+            console.log('🔄 SSE: Конфигурация обновлена!');
+            try {
+                const data = JSON.parse(event.data);
+                if (data && data.hash) {
+                    loadConfigFromServer().then(() => {
+                        lastConfigHash = getConfigHash();
+                        showUpdateNotificationWithButton();
+                        window._pendingConfig = config;
+                    });
+                }
+            } catch (e) {
+                console.error('Ошибка обработки SSE события:', e);
+            }
+        });
+        
+        sseConnection.onerror = function(error) {
+            console.log('⚠️ SSE ошибка, переключаемся на polling:', error);
+            if (sseConnection) {
+                sseConnection.close();
+                sseConnection = null;
+            }
+            isSSEConnected = false;
+            startPolling();
+        };
+        
+        console.log('📡 SSE подключено для автоматических обновлений');
+    } catch (e) {
+        console.log('⚠️ SSE не доступно, используем polling');
+        startPolling();
+    }
+}
+
+function startPolling() {
+    lastConfigHash = getConfigHash();
+    
+    if (autoUpdateTimer) {
+        clearInterval(autoUpdateTimer);
+    }
+    autoUpdateTimer = setInterval(checkForUpdatesWithNotification, 30000);
+    console.log('🔄 Проверка обновлений запущена (раз в 30 сек)');
+}
+
+function stopAutoUpdate() {
+    if (autoUpdateTimer) {
+        clearInterval(autoUpdateTimer);
+        autoUpdateTimer = null;
+        console.log('⏹ Polling остановлен');
+    }
+    if (sseConnection) {
+        sseConnection.close();
+        sseConnection = null;
+        isSSEConnected = false;
+        console.log('⏹ SSE отключено');
+    }
+}
+
+function startAutoUpdate() {
+    // Не держим постоянный PHP-процесс через SSE: на shared-хостинге несколько
+    // открытых вкладок исчерпывают пул воркеров, после чего конфиг и MP3 ждут
+    // своей очереди. Редкий короткий запрос намного дешевле и стабильнее.
+    startPolling();
+}
+
+window.addEventListener('storage', function(e) {
+    if (e.key === 'dragonSound_config') {
+        try {
+            config = JSON.parse(e.newValue || '{}');
+            if (config && config.categories) {
+                stopAllSounds();
+                renderCategories();
+                renderSounds();
+                loadPlaylist(currentCategory);
+                applyBackground();
+            }
+        } catch(e) {}
+    }
+});
+
+document.addEventListener('keydown', handleKeyPress);
+
+// ============ ПОЛЬЗОВАТЕЛЬСКИЕ ИСТОЧНИКИ МУЗЫКИ ============
+let activeMusicSource = 'local';
+let externalMusicPaused = false;
+
+function getYouTubeEmbedUrl(value) {
+    try {
+        const url = new URL(value);
+        const host = url.hostname.replace(/^www\./, '').toLowerCase();
+        if (!['youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be'].includes(host)) return '';
+        const playlistId = url.searchParams.get('list');
+        // RD/RDMM — автоматически сформированные YouTube Radio-миксы. Они
+        // нередко запрещают embed videoseries, хотя само видео встраивается.
+        if (playlistId && !/^RD/i.test(playlistId) && /^[\w-]+$/.test(playlistId)) {
+            const embed = new URL('https://www.youtube.com/embed/videoseries');
+            embed.searchParams.set('list', playlistId);
+            embed.searchParams.set('enablejsapi', '1');
+            if (window.location.protocol === 'http:' || window.location.protocol === 'https:') embed.searchParams.set('origin', window.location.origin);
+            return embed.href;
+        }
+        let videoId = host === 'youtu.be' ? url.pathname.split('/').filter(Boolean)[0] : url.searchParams.get('v');
+        if (!videoId && url.pathname.startsWith('/embed/')) videoId = url.pathname.split('/')[2];
+        if (!videoId && (url.pathname.startsWith('/shorts/') || url.pathname.startsWith('/live/'))) videoId = url.pathname.split('/')[2];
+        if (!videoId || !/^[\w-]{6,20}$/.test(videoId)) return '';
+        const embed = new URL(`https://www.youtube.com/embed/${encodeURIComponent(videoId)}`);
+        embed.searchParams.set('enablejsapi', '1');
+        if (window.location.protocol === 'http:' || window.location.protocol === 'https:') embed.searchParams.set('origin', window.location.origin);
+        return embed.href;
+    } catch (error) {
+        return '';
+    }
+}
+
+function getVkPlaylistData(value) {
+    try {
+        const url = new URL(value);
+        const host = url.hostname.replace(/^www\./, '').toLowerCase();
+        if (!['vk.com', 'm.vk.com'].includes(host)) return null;
+        const match = decodeURIComponent(url.pathname + url.search).match(/(?:playlist\/|audio_playlist)(-?\d+)_(\d+)(?:_([a-f\d]+))?/i);
+        if (!match) return null;
+        return { ownerId: match[1], playlistId: match[2], hash: match[3] || '', originalUrl: url.href };
+    } catch (error) {
+        return null;
+    }
+}
+
+let vkOpenApiPromise = null;
+
+function ensureVkOpenApi() {
+    if (window.VK?.Widgets?.Playlist) return Promise.resolve(window.VK);
+    if (vkOpenApiPromise) return vkOpenApiPromise;
+    vkOpenApiPromise = new Promise((resolve, reject) => {
+        const existing = document.querySelector('script[data-dragon-vk-openapi]');
+        const script = existing || document.createElement('script');
+        const timeout = setTimeout(() => reject(new Error('VK API не ответил')), 12000);
+        script.onload = () => {
+            clearTimeout(timeout);
+            window.VK?.Widgets?.Playlist ? resolve(window.VK) : reject(new Error('Виджет плейлиста VK недоступен'));
+        };
+        script.onerror = () => {
+            clearTimeout(timeout);
+            reject(new Error('Не удалось загрузить виджет VK'));
+        };
+        if (!existing) {
+            script.src = 'https://vk.com/js/api/openapi.js';
+            script.async = true;
+            script.dataset.dragonVkOpenapi = '1';
+            document.head.appendChild(script);
+        }
+    });
+    return vkOpenApiPromise;
+}
+
+async function renderVkPlaylistWidget(vk, frameBox) {
+    const api = await ensureVkOpenApi();
+    const elementId = `vk_playlist_${String(vk.ownerId).replace('-', 'm')}_${vk.playlistId}`;
+    frameBox.innerHTML = `
+        <div class="vk-widget-shell">
+            <div class="vk-widget-heading"><span>VK</span><strong>Плейлист</strong></div>
+            <div class="vk-playlist-widget" id="${elementId}"></div>
+        </div>`;
+    const widgetHost = document.getElementById(elementId);
+    const availableWidth = Math.max(220, Math.floor(widgetHost?.getBoundingClientRect().width || frameBox.getBoundingClientRect().width || 320));
+    const fitWidget = () => {
+        const iframe = widgetHost?.querySelector('iframe');
+        if (!iframe) return;
+        iframe.removeAttribute('width');
+        iframe.style.width = '100%';
+        iframe.style.maxWidth = '100%';
+        iframe.style.minWidth = '0';
+        iframe.style.display = 'block';
+    };
+    frameBox._vkObserver?.disconnect();
+    frameBox._vkObserver = new MutationObserver(fitWidget);
+    frameBox._vkObserver.observe(widgetHost, { childList: true, subtree: true });
+    api.Widgets.Playlist(elementId, Number(vk.ownerId), Number(vk.playlistId), vk.hash || '', { width: availableWidth });
+    requestAnimationFrame(fitWidget);
+}
+
+function stopEmbeddedMusic() {
+    const frame = document.querySelector('#externalPlayerFrame iframe');
+    if (frame) frame.src = 'about:blank';
+}
+
+function sendYouTubeCommand(command, args = []) {
+    const frame = document.querySelector('#externalPlayerFrame iframe');
+    if (!frame?.contentWindow || activeMusicSource !== 'youtube') return false;
+    frame.contentWindow.postMessage(JSON.stringify({ event: 'command', func: command, args }), 'https://www.youtube.com');
+    return true;
+}
+
+function controlExternalMusic(action, value) {
+    if (activeMusicSource === 'local') return false;
+    if (activeMusicSource === 'youtube') {
+        const commands = { pause: 'pauseVideo', play: 'playVideo', stop: 'stopVideo', next: 'nextVideo', previous: 'previousVideo' };
+        if (action === 'volume') return sendYouTubeCommand('setVolume', [value]);
+        return commands[action] ? sendYouTubeCommand(commands[action]) : false;
+    }
+    if (activeMusicSource === 'vk') {
+        if (action === 'pause' || action === 'stop') {
+            stopEmbeddedMusic();
+            return true;
+        }
+        if (action === 'play') {
+            loadExternalPlaylist(false);
+            return true;
+        }
+    }
+    return false;
+}
+
+async function loadExternalPlaylist(showErrors = true) {
+    const input = document.getElementById('externalPlaylistUrl');
+    const frameBox = document.getElementById('externalPlayerFrame');
+    const hint = document.getElementById('externalMusicHint');
+    if (!input || !frameBox || !hint || activeMusicSource === 'local') return;
+    const value = input.value.trim();
+    hint.classList.remove('error');
+    frameBox.innerHTML = '';
+
+    if (!value) {
+        hint.textContent = activeMusicSource === 'vk'
+            ? 'Вставьте публичную ссылку VK вида vk.com/music/playlist/…'
+            : 'Вставьте ссылку на плейлист или видео YouTube.';
+        return;
+    }
+
+    let embedUrl = '';
+    if (activeMusicSource === 'youtube') {
+        embedUrl = getYouTubeEmbedUrl(value);
+        if (!embedUrl) {
+            hint.textContent = 'Не удалось распознать ссылку YouTube.';
+            hint.classList.add('error');
+            return;
+        }
+        if (window.location.protocol === 'file:') {
+            hint.textContent = 'YouTube не разрешает встроенный плеер при запуске через file://. На dragon-sound.ru ссылка откроется внутри сайта.';
+            hint.classList.add('error');
+            frameBox.innerHTML = `<a class="external-open-link youtube-link" href="${escapeHtml(value)}" target="_blank" rel="noopener">Посмотреть на YouTube</a>`;
+            localStorage.setItem('dragonSound_youtubePlaylist', value);
+            return;
+        }
+    } else {
+        const vk = getVkPlaylistData(value);
+        if (!vk) {
+            hint.textContent = 'Не удалось распознать ссылку на плейлист VK.';
+            hint.classList.add('error');
+            return;
+        }
+        try {
+            hint.textContent = 'Загрузка виджета VK…';
+            await renderVkPlaylistWidget(vk, frameBox);
+            externalMusicPaused = false;
+            localStorage.setItem('dragonSound_vkPlaylist', value);
+            hint.textContent = 'Плейлист VK загружен.';
+        } catch (error) {
+            hint.textContent = `${error.message}. Проверьте, что плейлист открыт для просмотра.`;
+            hint.classList.add('error');
+            frameBox.innerHTML = `<a class="external-open-link" href="${escapeHtml(vk.originalUrl)}" target="_blank" rel="noopener">Открыть плейлист VK</a>`;
+        }
+        return;
+    }
+
+    const iframe = document.createElement('iframe');
+    iframe.src = embedUrl;
+    iframe.title = activeMusicSource === 'vk' ? 'Плейлист VK' : 'Плейлист YouTube';
+    iframe.loading = 'lazy';
+    iframe.allow = 'autoplay; encrypted-media; picture-in-picture';
+    iframe.referrerPolicy = 'strict-origin-when-cross-origin';
+    iframe.allowFullscreen = true;
+    frameBox.appendChild(iframe);
+    externalMusicPaused = false;
+    localStorage.setItem(activeMusicSource === 'vk' ? 'dragonSound_vkPlaylist' : 'dragonSound_youtubePlaylist', value);
+    hint.textContent = activeMusicSource === 'vk' ? 'Публичный плейлист VK загружен.' : 'Плейлист YouTube загружен.';
+}
+
+function switchMusicSource(source) {
+    if (!['local', 'vk', 'youtube'].includes(source)) source = 'local';
+    if (source !== activeMusicSource) stopEmbeddedMusic();
+    activeMusicSource = source;
+    localStorage.setItem('dragonSound_musicSource', source);
+    const panel = document.querySelector('.music-panel');
+    const externalPanel = document.getElementById('externalMusicPanel');
+    const input = document.getElementById('externalPlaylistUrl');
+    const label = document.getElementById('externalPlaylistLabel');
+    document.querySelectorAll('.music-source-btn').forEach(button => button.classList.toggle('active', button.dataset.musicSource === source));
+    panel?.classList.toggle('external-source', source !== 'local');
+    panel?.classList.toggle('source-vk', source === 'vk');
+    panel?.classList.toggle('source-youtube', source === 'youtube');
+    if (externalPanel) externalPanel.hidden = source === 'local';
+
+    if (source === 'local') return;
+    pauseMusicOnSwitch();
+    if (label) label.textContent = source === 'vk' ? 'Ссылка на плейлист VK' : 'Ссылка на плейлист YouTube';
+    if (input) {
+        input.placeholder = source === 'vk' ? 'https://vk.com/music/playlist/…' : 'https://www.youtube.com/playlist?list=…';
+        input.value = localStorage.getItem(source === 'vk' ? 'dragonSound_vkPlaylist' : 'dragonSound_youtubePlaylist') || '';
+    }
+    loadExternalPlaylist(false);
+}
+
+function initExternalMusicSources() {
+    document.querySelectorAll('.music-source-btn').forEach(button => {
+        button.addEventListener('click', () => switchMusicSource(button.dataset.musicSource));
+    });
+    document.getElementById('loadExternalPlaylistBtn')?.addEventListener('click', () => loadExternalPlaylist(true));
+    document.getElementById('externalPlaylistUrl')?.addEventListener('keydown', event => {
+        if (event.key === 'Enter') loadExternalPlaylist(true);
+    });
+    switchMusicSource(localStorage.getItem('dragonSound_musicSource') || 'local');
+}
+
+// ============ ОБРАБОТЧИК КНОПКИ СОХРАНЕНИЯ ============
+document.addEventListener('DOMContentLoaded', function() {
+    initExternalMusicSources();
+    const saveBtn = document.getElementById('saveSettingsBtn');
+    if (saveBtn) {
+        saveBtn.addEventListener('click', saveAllSettingsManually);
+    }
+    
+    const saveBigBtn = document.getElementById('saveBigSettingsBtn');
+    if (saveBigBtn) {
+        saveBigBtn.addEventListener('click', saveAllSettingsManually);
+    }
+    
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', logoutUser);
+    }
+});
+
+// ============ ЗАПУСК ============
+(async function() {
+    // checkAuthStatus() и loadConfigFromServer() не зависят друг от друга —
+    // раньше шли строго последовательно (плюс checkAuthStatus() для
+    // залогиненных сам внутри себя вызывает loadUserSettings(), а следом
+    // шёл ещё один такой же запрос) - итого до 3 запросов подряд, один из
+    // них дублирующий. Грузим конфиг и статус авторизации параллельно.
+    await Promise.all([
+        checkAuthStatus(), // сам загрузит настройки пользователя, если залогинен
+        loadConfigFromServer()
+    ]);
+
+    loadKeyBindings();
+    loadKeyVolumes();
+    loadFavorites();
+    init();
+    if (isLoggedIn()) startActivityHeartbeat();
+    initialRenderComplete = true;
+})();
+
+setTimeout(function() {
+    if (!window._userHotkeys || Object.keys(window._userHotkeys).length === 0) {
+        console.log('⌨ Устанавливаем стандартные горячие клавиши');
+        window._userHotkeys = {
+            'pause_all': 'p',
+            'stop_all': 'o',
+            'next_track': 'ArrowRight',
+            'prev_track': 'ArrowLeft',
+            'volume_up': 'ArrowUp',
+            'volume_down': 'ArrowDown'
+        };
+        console.log('✅ Стандартные клавиши установлены:', window._userHotkeys);
+    }
+}, 1000);

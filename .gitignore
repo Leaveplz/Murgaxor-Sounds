@@ -1,0 +1,8 @@
+node_modules/
+.env
+logs/
+.server.pid
+data/playlists.json
+data/uploads.json
+data/media-overrides.json
+uploads/
