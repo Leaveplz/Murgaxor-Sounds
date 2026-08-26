@@ -36,6 +36,11 @@
                 <span>Поиск</span>
                 <input id="search-input" type="search" placeholder="дождь, битва, таверна...">
               </label>
+              <label class="favorite-filter">
+                <input id="favorites-only" type="checkbox">
+                <span aria-hidden="true">★</span>
+                <strong>Только избранные</strong>
+              </label>
               <button id="save-settings" type="button">Сохранить настройки</button>
               <span class="active-count">Активных:<strong id="active-count">0</strong></span>
               <button id="pause-all" type="button">Ⅱ Пауза</button>
@@ -146,25 +151,78 @@
 
           <section id="admin-upload-tab" class="admin-tab-panel">
           <section class="theme-admin-box">
-            <h3>Новая тема музыки</h3>
+            <h3>Создать категорию звуков</h3>
             <label>
-              <span>Название темы</span>
-              <input id="new-theme-title" type="text" placeholder="Например: Магическая академия">
+              <span>Новая категория</span>
+              <input id="new-sound-category-title" type="text" placeholder="Например: Магия">
             </label>
             <label>
-              <span>Картинка темы</span>
-              <select id="new-theme-image">
+              <span>Картинка категории</span>
+              <select id="new-sound-category-image">
                 <option value="">Автоматически</option>
               </select>
             </label>
-            <div id="new-theme-image-preview" class="admin-image-preview" aria-hidden="true"></div>
+            <div id="new-sound-category-image-preview" class="admin-image-preview" aria-hidden="true"></div>
             <label>
-              <span>Загрузить свою картинку</span>
-              <input id="new-theme-cover-file" type="file" accept="image/png,image/jpeg,image/webp">
+              <span>Загрузить свою обложку</span>
+              <input id="new-sound-category-cover-file" type="file" accept="image/png,image/jpeg,image/webp">
             </label>
-            <button id="new-theme-cover-upload" type="button">Загрузить обложку темы</button>
-            <button id="admin-create-theme" type="button">Создать тему</button>
+            <button id="new-sound-category-cover-upload" type="button">Загрузить обложку категории</button>
+            <button id="admin-create-sound-category" type="button">Создать категорию</button>
           </section>
+
+          <section class="theme-admin-box">
+            <h3>Редактировать категорию звуков</h3>
+            <label>
+              <span>Категория</span>
+              <select id="sound-category-edit-select"></select>
+            </label>
+            <label>
+              <span>Название</span>
+              <input id="sound-category-edit-title" type="text">
+            </label>
+            <label>
+              <span>Обложка</span>
+              <select id="sound-category-edit-image">
+                <option value="">Автоматически</option>
+              </select>
+            </label>
+            <div id="sound-category-edit-image-preview" class="admin-image-preview" aria-hidden="true"></div>
+            <label>
+              <span>Загрузить свою обложку</span>
+              <input id="sound-category-edit-cover-file" type="file" accept="image/png,image/jpeg,image/webp">
+            </label>
+            <button id="sound-category-edit-cover-upload" type="button">Загрузить обложку категории</button>
+            <button id="admin-save-sound-category" type="button" class="register">Сохранить категорию</button>
+          </section>
+
+          <section class="theme-admin-box">
+            <h3>Удалить категорию звуков</h3>
+            <label>
+              <span>Удалить категорию</span>
+              <select id="delete-sound-category-select"></select>
+            </label>
+            <button id="admin-delete-sound-category" type="button" class="danger-button">Удалить категорию</button>
+          </section>
+
+          <section class="theme-admin-box">
+            <h3>Добавить существующий звук в категорию</h3>
+            <div class="category-assign-box">
+              <label>
+                <span>Выбрать категорию</span>
+                <select id="assign-sound-category"></select>
+              </label>
+              <label>
+                <span>Добавить существующий звук</span>
+                <input id="assign-sound-search" type="search" placeholder="Найти звук...">
+                <select id="assign-sound-select" size="6"></select>
+              </label>
+              <button id="admin-assign-sound-category" type="button">Добавить звук в категорию</button>
+            </div>
+          </section>
+
+          <section class="theme-admin-box">
+            <h3>Загрузить аудио</h3>
           <label>
             <span>Файл</span>
             <input id="upload-file" type="file" accept="audio/*">
@@ -181,16 +239,8 @@
             </select>
           </label>
           <label id="upload-section-row">
-            <span>Категория звуков</span>
-            <select id="upload-section">
-              <option value="nature" data-name="Природа" data-image="nature.jpg">Природа</option>
-              <option value="battle" data-name="Бой" data-image="battle.webp">Бой</option>
-              <option value="town" data-name="Город" data-image="city.webp">Город</option>
-              <option value="dungeon" data-name="Подземелье" data-image="dungeon.webp">Подземелье</option>
-              <option value="ambience" data-name="Эмбиенс" data-image="journey.webp">Эмбиенс</option>
-              <option value="creatures" data-name="Существа" data-image="monsters.jpg">Существа</option>
-              <option value="effects" data-name="Эффекты" data-image="situations.jpg">Эффекты</option>
-            </select>
+            <span>Категории звуков</span>
+            <select id="upload-section" multiple size="6"></select>
           </label>
           <label id="upload-theme-row" hidden>
             <span>Настроение музыки</span>
@@ -209,6 +259,7 @@
           </label>
           <button id="upload-cover-button" type="button">Загрузить превью</button>
           <button id="admin-upload" type="button" class="register">Загрузить</button>
+          </section>
           </section>
 
           <section id="admin-edit-tab" class="admin-tab-panel" hidden>
@@ -232,16 +283,8 @@
               </select>
             </label>
             <label id="edit-section-row">
-              <span>Категория звуков</span>
-              <select id="edit-section">
-                <option value="nature" data-name="Природа" data-image="nature.jpg">Природа</option>
-                <option value="battle" data-name="Бой" data-image="battle.webp">Бой</option>
-                <option value="town" data-name="Город" data-image="city.webp">Город</option>
-                <option value="dungeon" data-name="Подземелье" data-image="dungeon.webp">Подземелье</option>
-                <option value="ambience" data-name="Эмбиенс" data-image="journey.webp">Эмбиенс</option>
-                <option value="creatures" data-name="Существа" data-image="monsters.jpg">Существа</option>
-                <option value="effects" data-name="Эффекты" data-image="situations.jpg">Эффекты</option>
-              </select>
+              <span>Категории звуков</span>
+              <select id="edit-section" multiple size="6"></select>
             </label>
             <label id="edit-theme-row" hidden>
               <span>Настроение музыки</span>
@@ -271,6 +314,27 @@
           </section>
 
           <section id="admin-themes-tab" class="admin-tab-panel" hidden>
+            <section class="theme-admin-box">
+              <h3>Новая тема музыки</h3>
+              <label>
+                <span>Название темы</span>
+                <input id="new-theme-title" type="text" placeholder="Например: Магическая академия">
+              </label>
+              <label>
+                <span>Картинка темы</span>
+                <select id="new-theme-image">
+                  <option value="">Автоматически</option>
+                </select>
+              </label>
+              <div id="new-theme-image-preview" class="admin-image-preview" aria-hidden="true"></div>
+              <label>
+                <span>Загрузить свою картинку</span>
+                <input id="new-theme-cover-file" type="file" accept="image/png,image/jpeg,image/webp">
+              </label>
+              <button id="new-theme-cover-upload" type="button">Загрузить обложку темы</button>
+              <button id="admin-create-theme" type="button">Создать тему</button>
+            </section>
+
             <label>
               <span>Тема</span>
               <select id="theme-edit-select"></select>
@@ -297,20 +361,25 @@
                 <span>Вся музыка</span>
                 <input id="theme-music-search" type="search" placeholder="Найти трек по названию, файлу или теме...">
                 <select id="theme-music-source" size="8"></select>
+                <button id="theme-preview-source" type="button">▶ Прослушать выбранный</button>
               </label>
               <div class="theme-playlist-actions">
                 <button id="theme-track-add" type="button">Добавить →</button>
                 <button id="theme-track-remove" type="button">← Убрать</button>
                 <button id="theme-track-up" type="button">Выше</button>
                 <button id="theme-track-down" type="button">Ниже</button>
+                <button id="theme-preview-stop" type="button">■ Стоп</button>
               </div>
               <label>
                 <span>Плейлист темы</span>
                 <select id="theme-playlist-tracks" size="8"></select>
+                <button id="theme-preview-playlist" type="button">▶ Прослушать выбранный</button>
               </label>
             </div>
+            <p id="theme-preview-status" class="theme-preview-status">Предпрослушивание остановлено</p>
             <div class="admin-edit-actions">
               <button id="admin-save-theme" type="button" class="register">Сохранить тему</button>
+              <button id="admin-clear-theme-playlist" type="button">Очистить плейлист</button>
               <button id="admin-delete-theme" type="button" class="danger-button">Удалить</button>
             </div>
           </section>

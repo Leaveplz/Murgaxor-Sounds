@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { mergeUploadedMedia, readArchive, resolveMediaPath, sectionDefinitions, splitMedia } from './library.mjs';
 import { applyOverrides, loadOverrides, saveOverrides } from './mediaOverrides.mjs';
 import { loadPlaylists, makePlaylist, savePlaylists } from './playlists.mjs';
+import { createSoundCategory, deleteSoundCategory, loadSoundCategories, updateSoundCategory } from './soundCategories.mjs';
 import { createTheme, deleteTheme, loadThemes, updateTheme } from './themes.mjs';
 import { loadUploads, parseMultipart, partsToForm, safeAudioFileName, safeImageFileName, saveUploads, uploadToMedia } from './uploads.mjs';
 
@@ -22,6 +23,7 @@ const playlistsFile = path.join(rootDir, 'data', 'playlists.json');
 const uploadsFile = path.join(rootDir, 'data', 'uploads.json');
 const overridesFile = path.join(rootDir, 'data', 'media-overrides.json');
 const themesFile = path.join(rootDir, 'data', 'themes.json');
+const soundCategoriesFile = path.join(rootDir, 'data', 'sound-categories.json');
 const port = Number(process.env.PORT || 3040);
 const adminPassword = process.env.ADMIN_PASSWORD || 'admin';
 
@@ -42,9 +44,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && pathname === '/api/library') {
       const media = await getLibrary();
       const split = splitMedia(media);
+      const sections = await soundCategories();
       return json(res, {
         ...split,
-        sections: sectionDefinitions(),
+        sections,
         totals: {
           sounds: split.sounds.length,
           music: split.music.length
@@ -58,6 +61,10 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && pathname === '/api/themes') {
       return json(res, { themes: await loadThemes(themesFile) });
+    }
+
+    if (req.method === 'GET' && pathname === '/api/sound-categories') {
+      return json(res, { categories: await soundCategories() });
     }
 
     if (req.method === 'GET' && pathname === '/api/sounds') {
@@ -89,6 +96,29 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const theme = await createTheme(themesFile, body);
       return json(res, theme, 201);
+    }
+
+    if (req.method === 'POST' && pathname === '/api/admin/sound-categories') {
+      assertAdmin(req);
+      const body = await readJson(req);
+      const category = await createSoundCategory(soundCategoriesFile, sectionDefinitions(), body);
+      return json(res, category, 201);
+    }
+
+    const adminSoundCategoryMatch = pathname.match(/^\/api\/admin\/sound-categories\/([^/]+)$/);
+    if (adminSoundCategoryMatch && req.method === 'PUT') {
+      assertAdmin(req);
+      const body = await readJson(req);
+      const category = await updateSoundCategory(soundCategoriesFile, sectionDefinitions(), adminSoundCategoryMatch[1], body);
+      invalidateLibrary();
+      return json(res, category);
+    }
+
+    if (adminSoundCategoryMatch && req.method === 'DELETE') {
+      assertAdmin(req);
+      const result = await deleteSoundCategory(soundCategoriesFile, sectionDefinitions(), adminSoundCategoryMatch[1]);
+      invalidateLibrary();
+      return json(res, result);
     }
 
     const adminThemeMatch = pathname.match(/^\/api\/admin\/themes\/([^/]+)$/);
@@ -137,14 +167,17 @@ const server = http.createServer(async (req, res) => {
       await fsp.writeFile(path.join(targetDir, fileName), file.content);
 
       const uploads = await loadUploads(uploadsFile);
+      const selectedSectionIds = parseSectionIds(fields.sectionIds, fields.sectionId || 'effects');
+      const primarySection = await sectionForId(selectedSectionIds[0] || 'effects');
       const entry = {
         id: Buffer.from(`upload:${subdir}/${fileName}`, 'utf8').toString('base64url'),
         file: `${subdir}/${fileName}`,
         originalFileName: file.filename,
         title: String(fields.title || path.basename(file.filename, path.extname(file.filename))).slice(0, 120),
         type,
-        sectionId: fields.sectionId || 'effects',
-        sectionName: fields.sectionName || 'Эффекты',
+        sectionId: type === 'sound' ? primarySection.id : 'music',
+        sectionName: type === 'sound' ? primarySection.name : 'Музыка',
+        sectionIds: type === 'sound' ? selectedSectionIds : [],
         themeId: type === 'music' ? (fields.themeId || 'journey') : null,
         image: fields.image || null,
         bytes: file.content.length,
@@ -166,11 +199,14 @@ const server = http.createServer(async (req, res) => {
       if (!current) return json(res, { error: 'Элемент медиатеки не найден.' }, 404);
 
       const type = fields.type === 'music' ? 'music' : 'sound';
+      const selectedSectionIds = parseSectionIds(fields.sectionIds, fields.sectionId || current.sectionId || 'effects');
+      const primarySection = await sectionForId(selectedSectionIds[0] || 'effects');
       const selected = {
         title: String(fields.title || current.title).slice(0, 120),
         type,
-        sectionId: type === 'sound' ? (fields.sectionId || current.sectionId || 'effects') : 'music',
-        sectionName: type === 'sound' ? (fields.sectionName || current.sectionName || 'Эффекты') : 'Музыка',
+        sectionId: type === 'sound' ? primarySection.id : 'music',
+        sectionName: type === 'sound' ? primarySection.name : 'Музыка',
+        sectionIds: type === 'sound' ? selectedSectionIds : [],
         themeId: type === 'music' ? (fields.themeId || current.themeId || 'journey') : null,
         image: fields.image || current.image || null,
         editedAt: new Date().toISOString()
@@ -366,6 +402,30 @@ async function getLibrary() {
     libraryReadAt = Date.now();
   }
   return libraryCache;
+}
+
+async function soundCategories() {
+  return loadSoundCategories(soundCategoriesFile, sectionDefinitions());
+}
+
+async function sectionForId(sectionId) {
+  const sections = await soundCategories();
+  return sections.find((section) => section.id === sectionId) || sections.find((section) => section.id === 'effects') || { id: 'effects', name: 'Эффекты', image: 'situations.jpg' };
+}
+
+function parseSectionIds(rawValue, fallback = 'effects') {
+  const raw = String(rawValue || '').trim();
+  let values = [];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) values = parsed;
+    } catch {
+      values = raw.split(',');
+    }
+  }
+  if (!values.length && fallback) values = [fallback];
+  return [...new Set(values.map((item) => String(item).trim()).filter(Boolean))].slice(0, 20);
 }
 
 async function listReferenceImages() {

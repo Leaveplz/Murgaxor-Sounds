@@ -34,6 +34,7 @@ const state = {
   discordMusicOffset: 0,
   selectedTheme: localStorage.getItem('leaveplz-theme') || 'tavern',
   search: '',
+  favoritesOnly: localStorage.getItem('leaveplz-favorites-only') === 'true',
   masterVolume: Number(localStorage.getItem('leaveplz-master-volume') || 0.8),
   musicVolume: Number(localStorage.getItem('leaveplz-music-volume') || 0.7),
   outputMode: localStorage.getItem('leaveplz-output-mode') || 'local',
@@ -54,6 +55,7 @@ const elements = {
   selectedThemeLabel: $('#selected-theme-label'),
   soundsContainer: $('#sounds-container'),
   searchInput: $('#search-input'),
+  favoritesOnly: $('#favorites-only'),
   activeCount: $('#active-count'),
   pauseAll: $('#pause-all'),
   stopAll: $('#stop-all'),
@@ -109,6 +111,25 @@ const elements = {
   newThemeCoverFile: $('#new-theme-cover-file'),
   newThemeCoverUpload: $('#new-theme-cover-upload'),
   adminCreateTheme: $('#admin-create-theme'),
+  newSoundCategoryTitle: $('#new-sound-category-title'),
+  newSoundCategoryImage: $('#new-sound-category-image'),
+  newSoundCategoryImagePreview: $('#new-sound-category-image-preview'),
+  newSoundCategoryCoverFile: $('#new-sound-category-cover-file'),
+  newSoundCategoryCoverUpload: $('#new-sound-category-cover-upload'),
+  adminCreateSoundCategory: $('#admin-create-sound-category'),
+  soundCategoryEditSelect: $('#sound-category-edit-select'),
+  soundCategoryEditTitle: $('#sound-category-edit-title'),
+  soundCategoryEditImage: $('#sound-category-edit-image'),
+  soundCategoryEditImagePreview: $('#sound-category-edit-image-preview'),
+  soundCategoryEditCoverFile: $('#sound-category-edit-cover-file'),
+  soundCategoryEditCoverUpload: $('#sound-category-edit-cover-upload'),
+  adminSaveSoundCategory: $('#admin-save-sound-category'),
+  deleteSoundCategorySelect: $('#delete-sound-category-select'),
+  adminDeleteSoundCategory: $('#admin-delete-sound-category'),
+  assignSoundCategory: $('#assign-sound-category'),
+  assignSoundSearch: $('#assign-sound-search'),
+  assignSoundSelect: $('#assign-sound-select'),
+  adminAssignSoundCategory: $('#admin-assign-sound-category'),
   adminUpload: $('#admin-upload'),
   adminTabs: document.querySelectorAll('[data-admin-tab]'),
   adminUploadTab: $('#admin-upload-tab'),
@@ -143,7 +164,12 @@ const elements = {
   themeTrackRemove: $('#theme-track-remove'),
   themeTrackUp: $('#theme-track-up'),
   themeTrackDown: $('#theme-track-down'),
+  themePreviewSource: $('#theme-preview-source'),
+  themePreviewPlaylist: $('#theme-preview-playlist'),
+  themePreviewStop: $('#theme-preview-stop'),
+  themePreviewStatus: $('#theme-preview-status'),
   adminSaveTheme: $('#admin-save-theme'),
+  adminClearThemePlaylist: $('#admin-clear-theme-playlist'),
   adminDeleteTheme: $('#admin-delete-theme'),
   adminStatus: $('#admin-status'),
   toast: $('#toast')
@@ -153,6 +179,11 @@ state.musicAudio.addEventListener('ended', () => playMusicFrom(state.playlistInd
 
 let discordMixTimer = null;
 const durationCache = new Map();
+const adminPreviewAudio = new Audio();
+
+adminPreviewAudio.addEventListener('ended', () => {
+  elements.themePreviewStatus.textContent = 'Предпрослушивание остановлено';
+});
 
 async function api(path, options = {}) {
   const headers = options.body instanceof FormData ? { ...(options.headers || {}) } : { 'Content-Type': 'application/json', ...(options.headers || {}) };
@@ -184,17 +215,24 @@ function normalize(value) {
 }
 
 function textFor(item) {
-  return normalize(`${item.title} ${item.originalTitle || ''} ${item.sectionName || ''} ${item.file || ''}`);
+  const names = categoryIdsForSound(item)
+    .map((id) => state.sections.find((section) => section.id === id)?.name)
+    .filter(Boolean)
+    .join(' ');
+  return normalize(`${item.title} ${item.originalTitle || ''} ${item.sectionName || ''} ${names} ${item.file || ''}`);
 }
 
 function visibleSounds() {
   const query = normalize(state.search);
-  return state.sounds.filter((sound) => !query || textFor(sound).includes(query));
+  return state.sounds.filter((sound) => {
+    if (state.favoritesOnly && !state.favoriteIds.has(sound.id)) return false;
+    return !query || textFor(sound).includes(query);
+  });
 }
 
 function themeMusic() {
   const currentTheme = theme();
-  if (Array.isArray(currentTheme.tracks) && currentTheme.tracks.length) {
+  if (Array.isArray(currentTheme.tracks)) {
     const byId = new Map(state.music.map((track) => [track.id, track]));
     return currentTheme.tracks.map((id) => byId.get(id)).filter(Boolean);
   }
@@ -208,7 +246,7 @@ function currentTracks() {
 }
 
 function baseLoopForSound(sound) {
-  const sectionId = sound?.sectionId || 'effects';
+  const sectionId = categoryIdsForSound(sound)[0] || 'effects';
   return state.sectionLoopDefaults[sectionId] ?? state.loopByDefault;
 }
 
@@ -218,6 +256,26 @@ function defaultLoopForSound(sound) {
 
 function sectionLoopDefault(sectionId) {
   return state.sectionLoopDefaults[sectionId] ?? state.loopByDefault;
+}
+
+function categoryIdsForSound(sound) {
+  const ids = Array.isArray(sound?.sectionIds) && sound.sectionIds.length
+    ? sound.sectionIds
+    : [sound?.sectionId || 'effects'];
+  const knownIds = new Set(state.sections.map((section) => section.id));
+  const filtered = ids.map((id) => String(id).trim()).filter((id) => id && knownIds.has(id));
+  return filtered.length ? [...new Set(filtered)] : ['effects'];
+}
+
+function selectedValues(select) {
+  return [...select.selectedOptions].map((option) => option.value).filter(Boolean);
+}
+
+function setSelectedValues(select, values) {
+  const selected = new Set(values);
+  [...select.options].forEach((option) => {
+    option.selected = selected.has(option.value);
+  });
 }
 
 function renderThemes() {
@@ -243,9 +301,11 @@ function renderSounds() {
   for (const section of state.sections) grouped.set(section.id, { section, sounds: [] });
 
   for (const sound of visibleSounds()) {
-    const id = sound.sectionId || 'effects';
-    if (!grouped.has(id)) grouped.set(id, { section: { id, name: sound.sectionName || 'Эффекты', image: sound.image || 'situations.jpg' }, sounds: [] });
-    grouped.get(id).sounds.push(sound);
+    for (const id of categoryIdsForSound(sound)) {
+      const section = state.sections.find((item) => item.id === id) || { id, name: sound.sectionName || 'Эффекты', image: sound.image || 'situations.jpg' };
+      if (!grouped.has(id)) grouped.set(id, { section, sounds: [] });
+      grouped.get(id).sounds.push(sound);
+    }
   }
 
   elements.soundsContainer.innerHTML = [...grouped.values()]
@@ -274,17 +334,17 @@ function renderSection(section, sounds) {
           ${loopDefault ? 'Автоповтор включён' : 'Автоповтор выключен'}
         </button>
       </div>
-      ${collapsed ? '' : `<div class="sound-grid">${sounds.map(renderSoundCard).join('')}</div>`}
+      ${collapsed ? '' : `<div class="sound-grid">${sounds.map((sound) => renderSoundCard(sound, section.id)).join('')}</div>`}
     </article>
   `;
 }
 
-function renderSoundCard(sound) {
+function renderSoundCard(sound, contextSectionId = categoryIdsForSound(sound)[0] || 'effects') {
   const active = state.activeSounds.get(sound.id);
   const volume = active?.volume ?? Number(localStorage.getItem(`leaveplz-volume-${sound.id}`) || 0.5);
-  const loop = active?.loop ?? defaultLoopForSound(sound);
+  const loop = active?.loop ?? state.loopOverrides[sound.id] ?? sectionLoopDefault(contextSectionId);
   const favorite = state.favoriteIds.has(sound.id);
-  const image = sound.image || state.sections.find((section) => section.id === sound.sectionId)?.image || 'situations.jpg';
+  const image = sound.image || state.sections.find((section) => section.id === categoryIdsForSound(sound)[0])?.image || 'situations.jpg';
 
   return `
     <article class="sound-card ${active ? 'playing' : ''}" data-id="${sound.id}" style="--image: ${cssImage(image)}">
@@ -294,7 +354,7 @@ function renderSoundCard(sound) {
           <button class="fav-toggle ${favorite ? 'active' : ''}" type="button" data-action="favorite" data-id="${sound.id}" title="В избранное" aria-label="В избранное">${favorite ? '★' : '☆'}</button>
         </div>
         <div class="sound-name">${escapeHtml(sound.title)}</div>
-        <button class="play-button" type="button" data-action="toggle" data-id="${sound.id}" aria-label="Запустить ${escapeHtml(sound.title)}">${active ? '■' : '▶'}</button>
+        <button class="play-button" type="button" data-action="toggle" data-id="${sound.id}" data-section-id="${contextSectionId}" aria-label="Запустить ${escapeHtml(sound.title)}">${active ? '■' : '▶'}</button>
         <label class="card-volume">
           <span>🔈</span>
           <input type="range" min="0" max="1" step="0.01" value="${volume}" data-action="volume" data-id="${sound.id}" aria-label="Громкость ${escapeHtml(sound.title)}">
@@ -540,7 +600,7 @@ async function startSound(id, options = {}) {
   if (existing) stopSound(id);
 
   const volume = Number(localStorage.getItem(`leaveplz-volume-${id}`) || options.volume || 0.5);
-  const loop = options.loop ?? defaultLoopForSound(sound);
+  const loop = options.loop ?? state.loopOverrides[id] ?? sectionLoopDefault(options.sectionId || categoryIdsForSound(sound)[0] || 'effects');
   if (isDiscordOutput()) {
     state.activeSounds.set(id, { sound, audio: null, volume, loop, endTimer: null, offset: 0, startedAt: 0, duration: 0 });
     renderSounds();
@@ -708,8 +768,10 @@ async function loadLibrary() {
   state.sounds = data.sounds;
   state.music = data.music;
   state.sections = data.sections?.length ? data.sections : fallbackSections;
+  populateSoundCategorySelects();
   renderSounds();
   renderPlaylist();
+  renderAssignSoundList();
   updateNowPlaying();
 }
 
@@ -756,6 +818,7 @@ function saveSettings() {
   localStorage.setItem('leaveplz-music-volume', String(state.musicVolume));
   localStorage.setItem('leaveplz-output-mode', state.outputMode);
   localStorage.setItem('leaveplz-theme', state.selectedTheme);
+  localStorage.setItem('leaveplz-favorites-only', String(state.favoritesOnly));
   localStorage.setItem('leaveplz-favorites', JSON.stringify([...state.favoriteIds]));
   localStorage.setItem('leaveplz-collapsed-sections', JSON.stringify([...state.collapsedSections]));
   localStorage.setItem('leaveplz-loop-overrides', JSON.stringify(state.loopOverrides));
@@ -770,6 +833,29 @@ function populateAdminThemeSelect() {
   elements.themeEditSelect.innerHTML = options;
   restoreSelectValue(elements.themeEditSelect, elements.themeEditSelect.value || state.selectedTheme);
   populateThemeEditor();
+}
+
+function populateSoundCategorySelects() {
+  const sectionOptions = state.sections.map((item) => `<option value="${item.id}" data-name="${escapeHtml(item.name)}" data-image="${escapeHtml(item.image || 'situations.jpg')}">${escapeHtml(item.name)}</option>`).join('');
+  const allOptions = state.sections.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}${item.builtIn === false ? '' : ' · стандартная'}</option>`).join('');
+  const uploadValues = selectedValues(elements.uploadSection);
+  const editValues = selectedValues(elements.editSection);
+  const editCategory = elements.soundCategoryEditSelect.value;
+  const assignCategory = elements.assignSoundCategory.value;
+  const deleteCategory = elements.deleteSoundCategorySelect.value;
+
+  elements.uploadSection.innerHTML = sectionOptions;
+  elements.editSection.innerHTML = sectionOptions;
+  elements.soundCategoryEditSelect.innerHTML = allOptions;
+  elements.assignSoundCategory.innerHTML = allOptions;
+  elements.deleteSoundCategorySelect.innerHTML = allOptions;
+
+  setSelectedValues(elements.uploadSection, uploadValues.length ? uploadValues : ['effects']);
+  setSelectedValues(elements.editSection, editValues.length ? editValues : ['effects']);
+  restoreSelectValue(elements.soundCategoryEditSelect, editCategory || state.sections[0]?.id || 'effects');
+  restoreSelectValue(elements.assignSoundCategory, assignCategory || state.sections[0]?.id || 'effects');
+  restoreSelectValue(elements.deleteSoundCategorySelect, deleteCategory || state.sections[0]?.id || 'effects');
+  populateSoundCategoryEditor();
 }
 
 async function loadThemes() {
@@ -791,6 +877,8 @@ function populateAdminImageSelects() {
   const editValue = elements.editImage.value;
   const newThemeValue = elements.newThemeImage.value;
   const themeEditValue = elements.themeEditImage.value;
+  const newSoundCategoryValue = elements.newSoundCategoryImage.value;
+  const soundCategoryEditValue = elements.soundCategoryEditImage.value;
   const options = [
     '<option value="">Автоматически</option>',
     ...state.previewImages.map((image) => `<option value="${escapeHtml(image.name)}">${escapeHtml(image.label)}</option>`)
@@ -800,10 +888,14 @@ function populateAdminImageSelects() {
   elements.editImage.innerHTML = options;
   elements.newThemeImage.innerHTML = options;
   elements.themeEditImage.innerHTML = options;
+  elements.newSoundCategoryImage.innerHTML = options;
+  elements.soundCategoryEditImage.innerHTML = options;
   restoreSelectValue(elements.uploadImage, uploadValue);
   restoreSelectValue(elements.editImage, editValue);
   restoreSelectValue(elements.newThemeImage, newThemeValue);
   restoreSelectValue(elements.themeEditImage, themeEditValue);
+  restoreSelectValue(elements.newSoundCategoryImage, newSoundCategoryValue);
+  restoreSelectValue(elements.soundCategoryEditImage, soundCategoryEditValue);
   updateAdminImagePreviews();
 }
 
@@ -848,6 +940,8 @@ function updateAdminImagePreviews() {
   updateImagePreview(elements.editImagePreview, elements.editImage.value || automaticEditImage());
   updateImagePreview(elements.newThemeImagePreview, elements.newThemeImage.value || 'journey.webp');
   updateImagePreview(elements.themeEditImagePreview, elements.themeEditImage.value || selectedThemeForEdit()?.image || 'journey.webp');
+  updateImagePreview(elements.newSoundCategoryImagePreview, elements.newSoundCategoryImage.value || 'situations.jpg');
+  updateImagePreview(elements.soundCategoryEditImagePreview, elements.soundCategoryEditImage.value || selectedSoundCategoryForEdit()?.image || 'situations.jpg');
 }
 
 function setAdminUnlocked(unlocked) {
@@ -880,14 +974,13 @@ async function uploadAdminFile() {
   }
 
   const type = elements.uploadType.value;
-  const selectedSection = elements.uploadSection.selectedOptions[0];
+  const sectionIds = selectedValues(elements.uploadSection);
   const form = new FormData();
   form.set('file', file);
   form.set('title', elements.uploadTitle.value.trim() || file.name.replace(/\.[^.]+$/, ''));
   form.set('type', type);
   form.set('themeId', type === 'music' ? elements.uploadTheme.value : '');
-  form.set('sectionId', type === 'sound' ? elements.uploadSection.value : '');
-  form.set('sectionName', type === 'sound' ? (selectedSection.dataset.name || selectedSection.textContent) : '');
+  form.set('sectionIds', type === 'sound' ? JSON.stringify(sectionIds.length ? sectionIds : ['effects']) : '[]');
   form.set('image', elements.uploadImage.value || automaticUploadImage());
 
   elements.adminStatus.textContent = 'Загрузка...';
@@ -956,6 +1049,129 @@ async function createMusicTheme() {
   showToast('Тема добавлена');
 }
 
+async function createSoundCategory() {
+  const name = elements.newSoundCategoryTitle.value.trim();
+  if (!name) {
+    showToast('Укажи название категории');
+    return;
+  }
+
+  elements.adminStatus.textContent = 'Создание категории...';
+  const created = await api('/api/admin/sound-categories', {
+    method: 'POST',
+    headers: { 'x-admin-password': state.adminPassword },
+    body: JSON.stringify({
+      name,
+      image: elements.newSoundCategoryImage.value || 'situations.jpg'
+    })
+  });
+  elements.newSoundCategoryTitle.value = '';
+  await loadLibrary();
+  setSelectedValues(elements.uploadSection, [created.id]);
+  elements.assignSoundCategory.value = created.id;
+  elements.adminStatus.textContent = 'Категория создана';
+  showToast('Категория добавлена');
+}
+
+function selectedSoundCategoryForEdit() {
+  return state.sections.find((section) => section.id === elements.soundCategoryEditSelect.value) || state.sections[0];
+}
+
+function populateSoundCategoryEditor() {
+  const category = selectedSoundCategoryForEdit();
+  if (!category) return;
+  elements.soundCategoryEditTitle.value = category.name || '';
+  elements.soundCategoryEditImage.value = category.image || '';
+  updateAdminImagePreviews();
+}
+
+async function saveSoundCategory() {
+  const category = selectedSoundCategoryForEdit();
+  if (!category) {
+    showToast('Выбери категорию');
+    return;
+  }
+
+  elements.adminStatus.textContent = 'Сохранение категории...';
+  const saved = await api(`/api/admin/sound-categories/${encodeURIComponent(category.id)}`, {
+    method: 'PUT',
+    headers: { 'x-admin-password': state.adminPassword },
+    body: JSON.stringify({
+      name: elements.soundCategoryEditTitle.value.trim() || category.name,
+      image: elements.soundCategoryEditImage.value || category.image || 'situations.jpg'
+    })
+  });
+  await loadLibrary();
+  elements.soundCategoryEditSelect.value = saved.id;
+  populateSoundCategoryEditor();
+  elements.adminStatus.textContent = 'Категория сохранена';
+  showToast('Категория обновлена');
+}
+
+async function deleteSoundCategory() {
+  const id = elements.deleteSoundCategorySelect.value;
+  const category = state.sections.find((item) => item.id === id);
+  if (!id || !category) {
+    showToast('Выбери категорию');
+    return;
+  }
+  if (!confirm(`Удалить категорию "${category.name}"? Звуки останутся на сервере и не будут удалены.`)) return;
+
+  elements.adminStatus.textContent = 'Удаление категории...';
+  await api(`/api/admin/sound-categories/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { 'x-admin-password': state.adminPassword }
+  });
+  delete state.sectionLoopDefaults[id];
+  localStorage.setItem('leaveplz-section-loop-defaults', JSON.stringify(state.sectionLoopDefaults));
+  await loadLibrary();
+  elements.adminStatus.textContent = 'Категория удалена';
+  showToast('Категория удалена, звуки остались');
+}
+
+function renderAssignSoundList() {
+  const query = normalize(elements.assignSoundSearch.value);
+  const items = state.sounds.filter((sound) => !query || textFor(sound).includes(query));
+  elements.assignSoundSelect.innerHTML = items.map((sound) => {
+    const categories = categoryIdsForSound(sound)
+      .map((id) => state.sections.find((section) => section.id === id)?.name)
+      .filter(Boolean)
+      .join(', ');
+    return `<option value="${sound.id}">${escapeHtml(sound.title)} · ${escapeHtml(categories)}</option>`;
+  }).join('') || '<option value="">Ничего не найдено</option>';
+}
+
+async function assignExistingSoundToCategory() {
+  const sound = state.sounds.find((item) => item.id === elements.assignSoundSelect.value);
+  const categoryId = elements.assignSoundCategory.value;
+  if (!sound || !categoryId) {
+    showToast('Выбери звук и категорию');
+    return;
+  }
+
+  const sectionIds = [...new Set([...categoryIdsForSound(sound), categoryId])];
+  await saveSoundCategoryAssignment(sound, sectionIds);
+  showToast('Звук добавлен в категорию');
+}
+
+async function saveSoundCategoryAssignment(sound, sectionIds) {
+  const form = new FormData();
+  form.set('title', sound.title);
+  form.set('type', 'sound');
+  form.set('sectionIds', JSON.stringify(sectionIds));
+  form.set('image', sound.image || '');
+
+  elements.adminStatus.textContent = 'Сохранение категорий...';
+  await api(`/api/admin/media/${encodeURIComponent(sound.id)}`, {
+    method: 'PUT',
+    headers: { 'x-admin-password': state.adminPassword },
+    body: form
+  });
+  await loadLibrary();
+  renderAdminMediaList();
+  elements.adminStatus.textContent = 'Категории обновлены';
+}
+
 function selectedThemeForEdit() {
   return themes.find((item) => item.id === elements.themeEditSelect.value) || themes[0];
 }
@@ -985,8 +1201,12 @@ function populateThemeEditor() {
 
   elements.themeEditTitle.value = current.name || '';
   elements.themeEditImage.value = current.image || '';
+  elements.adminDeleteTheme.disabled = Boolean(current.builtIn);
+  elements.adminDeleteTheme.title = current.builtIn ? 'Стандартную тему нельзя удалить, но её плейлист можно очистить.' : '';
   const byId = new Map(state.music.map((track) => [track.id, track]));
-  const playlistIds = Array.isArray(current.tracks) ? current.tracks.filter((id) => byId.has(id)) : [];
+  const playlistIds = Array.isArray(current.tracks)
+    ? current.tracks.filter((id) => byId.has(id))
+    : state.music.filter((track) => track.themeId === current.id).map((track) => track.id);
   elements.themePlaylistTracks.innerHTML = playlistIds.map((id) => {
     const track = byId.get(id);
     return `<option value="${track.id}">${escapeHtml(track.title)}</option>`;
@@ -1019,6 +1239,29 @@ function moveThemeTrack(direction) {
   if (direction > 0 && selected.nextElementSibling) {
     elements.themePlaylistTracks.insertBefore(selected.nextElementSibling, selected);
   }
+}
+
+async function previewThemeTrack(source) {
+  const select = source === 'playlist' ? elements.themePlaylistTracks : elements.themeMusicSource;
+  const id = select.value;
+  const track = state.music.find((item) => item.id === id);
+  if (!track) {
+    showToast('Выбери трек для предпрослушивания');
+    return;
+  }
+
+  adminPreviewAudio.pause();
+  adminPreviewAudio.src = `/audio/${encodeURIComponent(track.id)}`;
+  adminPreviewAudio.volume = state.masterVolume * state.musicVolume;
+  await adminPreviewAudio.play();
+  elements.themePreviewStatus.textContent = `Сейчас играет: ${track.title}`;
+}
+
+function stopThemePreview() {
+  adminPreviewAudio.pause();
+  adminPreviewAudio.removeAttribute('src');
+  adminPreviewAudio.load();
+  elements.themePreviewStatus.textContent = 'Предпрослушивание остановлено';
 }
 
 async function saveEditedTheme() {
@@ -1070,6 +1313,34 @@ async function deleteEditedTheme() {
   showToast('Тема удалена, треки остались в медиатеке');
 }
 
+async function clearEditedThemePlaylist() {
+  const current = selectedThemeForEdit();
+  if (!current) {
+    showToast('Выбери тему');
+    return;
+  }
+
+  if (!confirm(`Очистить плейлист темы "${current.name}"? Сами треки останутся в медиатеке.`)) return;
+
+  elements.adminStatus.textContent = 'Очистка плейлиста...';
+  const saved = await api(`/api/admin/themes/${encodeURIComponent(current.id)}`, {
+    method: 'PUT',
+    headers: { 'x-admin-password': state.adminPassword },
+    body: JSON.stringify({
+      name: elements.themeEditTitle.value.trim() || current.name,
+      image: elements.themeEditImage.value || current.image,
+      tracks: []
+    })
+  });
+  await loadThemes();
+  state.selectedTheme = saved.id;
+  applyTheme();
+  elements.themeEditSelect.value = saved.id;
+  populateThemeEditor();
+  elements.adminStatus.textContent = 'Плейлист очищен';
+  showToast('Плейлист темы очищен, треки остались');
+}
+
 function allMedia() {
   return [...state.sounds, ...state.music].sort((a, b) => a.title.localeCompare(b.title, 'ru'));
 }
@@ -1083,7 +1354,10 @@ function renderAdminMediaList() {
     const typeLabel = item.type === 'music' ? 'Музыка' : 'Звук';
     const group = item.type === 'music'
       ? (themes.find((themeItem) => themeItem.id === item.themeId)?.name || 'Без темы')
-      : (item.sectionName || 'Эффекты');
+      : categoryIdsForSound(item)
+        .map((id) => state.sections.find((section) => section.id === id)?.name)
+        .filter(Boolean)
+        .join(', ');
     return `<option value="${item.id}">${escapeHtml(typeLabel)} · ${escapeHtml(group)} · ${escapeHtml(item.title)}</option>`;
   }).join('');
 
@@ -1113,7 +1387,7 @@ function populateEditForm() {
 
   elements.editTitle.value = item.title || '';
   elements.editType.value = item.type || 'sound';
-  elements.editSection.value = item.sectionId || 'effects';
+  setSelectedValues(elements.editSection, categoryIdsForSound(item));
   elements.editTheme.value = item.themeId || state.selectedTheme;
   elements.editImage.value = item.image || '';
   elements.editFile.value = '';
@@ -1130,13 +1404,12 @@ async function saveEditedMedia() {
   }
 
   const type = elements.editType.value;
-  const selectedSection = elements.editSection.selectedOptions[0];
+  const sectionIds = selectedValues(elements.editSection);
   const form = new FormData();
   form.set('title', elements.editTitle.value.trim() || item.title);
   form.set('type', type);
   form.set('themeId', type === 'music' ? elements.editTheme.value : '');
-  form.set('sectionId', type === 'sound' ? elements.editSection.value : '');
-  form.set('sectionName', type === 'sound' ? (selectedSection.dataset.name || selectedSection.textContent) : '');
+  form.set('sectionIds', type === 'sound' ? JSON.stringify(sectionIds.length ? sectionIds : ['effects']) : '[]');
   form.set('image', elements.editImage.value || automaticEditImage());
 
   const replacement = elements.editFile.files[0];
@@ -1206,6 +1479,13 @@ elements.searchInput.addEventListener('input', (event) => {
   renderSounds();
 });
 
+elements.favoritesOnly.checked = state.favoritesOnly;
+elements.favoritesOnly.addEventListener('change', (event) => {
+  state.favoritesOnly = event.target.checked;
+  localStorage.setItem('leaveplz-favorites-only', String(state.favoritesOnly));
+  renderSounds();
+});
+
 elements.soundsContainer.addEventListener('click', async (event) => {
   const sectionLoop = event.target.closest('[data-section-loop]');
   if (sectionLoop) {
@@ -1228,7 +1508,7 @@ elements.soundsContainer.addEventListener('click', async (event) => {
   const id = button.dataset.id;
 
   try {
-    if (button.dataset.action === 'toggle') await startSound(id);
+    if (button.dataset.action === 'toggle') await startSound(id, { sectionId: button.dataset.sectionId });
     if (button.dataset.action === 'loop') toggleLoop(id);
     if (button.dataset.action === 'favorite') {
       if (state.favoriteIds.has(id)) state.favoriteIds.delete(id);
@@ -1341,7 +1621,10 @@ elements.adminOpen.addEventListener('click', () => {
   updateAdminImagePreviews();
   elements.adminDialog.showModal();
 });
-elements.adminClose.addEventListener('click', () => elements.adminDialog.close());
+elements.adminClose.addEventListener('click', () => {
+  stopThemePreview();
+  elements.adminDialog.close();
+});
 elements.adminLogin.addEventListener('click', () => loginAdmin().catch((error) => showToast(error.message)));
 elements.uploadType.addEventListener('change', () => {
   const music = elements.uploadType.value === 'music';
@@ -1353,6 +1636,9 @@ elements.uploadSection.addEventListener('change', updateAdminImagePreviews);
 elements.uploadTheme.addEventListener('change', updateAdminImagePreviews);
 elements.uploadImage.addEventListener('change', updateAdminImagePreviews);
 elements.newThemeImage.addEventListener('change', updateAdminImagePreviews);
+elements.newSoundCategoryImage.addEventListener('change', updateAdminImagePreviews);
+elements.soundCategoryEditSelect.addEventListener('change', populateSoundCategoryEditor);
+elements.soundCategoryEditImage.addEventListener('change', updateAdminImagePreviews);
 elements.uploadCoverButton.addEventListener('click', () => uploadCoverImage(elements.uploadCoverFile, elements.uploadImage).catch((error) => {
   elements.adminStatus.textContent = error.message;
   showToast(error.message);
@@ -1361,7 +1647,32 @@ elements.newThemeCoverUpload.addEventListener('click', () => uploadCoverImage(el
   elements.adminStatus.textContent = error.message;
   showToast(error.message);
 }));
+elements.newSoundCategoryCoverUpload.addEventListener('click', () => uploadCoverImage(elements.newSoundCategoryCoverFile, elements.newSoundCategoryImage).catch((error) => {
+  elements.adminStatus.textContent = error.message;
+  showToast(error.message);
+}));
+elements.soundCategoryEditCoverUpload.addEventListener('click', () => uploadCoverImage(elements.soundCategoryEditCoverFile, elements.soundCategoryEditImage).catch((error) => {
+  elements.adminStatus.textContent = error.message;
+  showToast(error.message);
+}));
 elements.adminCreateTheme.addEventListener('click', () => createMusicTheme().catch((error) => {
+  elements.adminStatus.textContent = error.message;
+  showToast(error.message);
+}));
+elements.adminCreateSoundCategory.addEventListener('click', () => createSoundCategory().catch((error) => {
+  elements.adminStatus.textContent = error.message;
+  showToast(error.message);
+}));
+elements.adminSaveSoundCategory.addEventListener('click', () => saveSoundCategory().catch((error) => {
+  elements.adminStatus.textContent = error.message;
+  showToast(error.message);
+}));
+elements.adminDeleteSoundCategory.addEventListener('click', () => deleteSoundCategory().catch((error) => {
+  elements.adminStatus.textContent = error.message;
+  showToast(error.message);
+}));
+elements.assignSoundSearch.addEventListener('input', renderAssignSoundList);
+elements.adminAssignSoundCategory.addEventListener('click', () => assignExistingSoundToCategory().catch((error) => {
   elements.adminStatus.textContent = error.message;
   showToast(error.message);
 }));
@@ -1409,7 +1720,14 @@ elements.themeTrackAdd.addEventListener('click', addTrackToThemePlaylist);
 elements.themeTrackRemove.addEventListener('click', removeTrackFromThemePlaylist);
 elements.themeTrackUp.addEventListener('click', () => moveThemeTrack(-1));
 elements.themeTrackDown.addEventListener('click', () => moveThemeTrack(1));
+elements.themePreviewSource.addEventListener('click', () => previewThemeTrack('source').catch((error) => showToast(error.message)));
+elements.themePreviewPlaylist.addEventListener('click', () => previewThemeTrack('playlist').catch((error) => showToast(error.message)));
+elements.themePreviewStop.addEventListener('click', stopThemePreview);
 elements.adminSaveTheme.addEventListener('click', () => saveEditedTheme().catch((error) => {
+  elements.adminStatus.textContent = error.message;
+  showToast(error.message);
+}));
+elements.adminClearThemePlaylist.addEventListener('click', () => clearEditedThemePlaylist().catch((error) => {
   elements.adminStatus.textContent = error.message;
   showToast(error.message);
 }));

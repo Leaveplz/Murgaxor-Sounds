@@ -307,6 +307,7 @@ async function walkAudio(dir, root = dir, source = 'archive') {
       source,
       sectionId: effect?.sectionId || 'music',
       sectionName: effect?.sectionName || 'Музыка',
+      sectionIds: effect?.sectionId ? [effect.sectionId] : [],
       themeId: type === 'music' ? themeFor(entry.name) : null,
       image: effect?.image || null,
       bytes: stat.size

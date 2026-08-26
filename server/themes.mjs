@@ -38,9 +38,10 @@ export async function loadThemes(filePath) {
   const customById = new Map(custom.map((theme) => [theme.id, theme]));
   const mergedDefaults = defaultThemes.map((theme) => ({
     ...theme,
-    ...(customById.get(theme.id) || {})
+    ...(customById.get(theme.id) || {}),
+    builtIn: true
   }));
-  return [...mergedDefaults, ...custom.filter((theme) => !defaultThemeIds.has(theme.id))];
+  return [...mergedDefaults, ...custom.filter((theme) => !defaultThemeIds.has(theme.id)).map((theme) => ({ ...theme, builtIn: false }))];
 }
 
 export async function createTheme(filePath, { name, image } = {}) {

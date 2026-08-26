@@ -295,6 +295,58 @@ input[type="range"] {
   font-size: 13px;
 }
 
+.favorite-filter {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: #f6d9c0;
+  background: rgba(255, 255, 255, 0.035);
+  cursor: pointer;
+  user-select: none;
+}
+
+.favorite-filter input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.favorite-filter span {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(232, 179, 95, 0.34);
+  border-radius: 6px;
+  color: rgba(246, 217, 192, 0.76);
+  background: rgba(25, 12, 5, 0.68);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.favorite-filter strong {
+  font-size: 12px;
+  line-height: 1.05;
+}
+
+.favorite-filter:has(input:checked) {
+  color: var(--gold);
+  border-color: rgba(232, 179, 95, 0.52);
+  background: rgba(232, 179, 95, 0.12);
+}
+
+.favorite-filter:has(input:checked) span {
+  color: var(--gold);
+  border-color: rgba(232, 179, 95, 0.64);
+  background: rgba(232, 179, 95, 0.16);
+}
+
 .active-count {
   min-height: 36px;
   display: inline-flex;
@@ -916,12 +968,20 @@ input[type="range"] {
   font-size: 15px;
 }
 
+.category-assign-box {
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 #admin-media-select {
   min-height: 180px;
   padding: 6px;
 }
 
 #admin-media-select option,
+#assign-sound-select option,
 #theme-music-source option,
 #theme-playlist-tracks option {
   padding: 7px;
@@ -945,9 +1005,16 @@ input[type="range"] {
   padding: 6px;
 }
 
+.theme-preview-status {
+  min-height: 18px;
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
 .admin-edit-actions {
   display: grid;
-  grid-template-columns: 1fr 120px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 8px;
 }
 

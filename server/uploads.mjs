@@ -8,7 +8,7 @@ const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 export async function loadUploads(filePath) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   try {
-    return JSON.parse(await fs.readFile(filePath, 'utf8'));
+    return JSON.parse((await fs.readFile(filePath, 'utf8')).replace(/^\uFEFF/, ''));
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
     await fs.writeFile(filePath, '[]', 'utf8');
@@ -22,6 +22,7 @@ export async function saveUploads(filePath, uploads) {
 }
 
 export function uploadToMedia(entry) {
+  const sectionIds = normalizeSectionIds(entry.sectionIds, entry.sectionId || 'effects');
   return {
     id: entry.id,
     file: entry.file,
@@ -29,13 +30,29 @@ export function uploadToMedia(entry) {
     originalTitle: entry.originalFileName,
     type: entry.type,
     source: 'upload',
-    sectionId: entry.sectionId || 'effects',
+    sectionId: sectionIds[0] || 'effects',
     sectionName: entry.sectionName || 'Эффекты',
+    sectionIds,
     themeId: entry.themeId || null,
     image: entry.image || null,
     bytes: entry.bytes || 0,
     uploadedAt: entry.uploadedAt
   };
+}
+
+function normalizeSectionIds(value, fallback) {
+  if (Array.isArray(value)) {
+    const ids = value.map((item) => String(item).trim()).filter(Boolean);
+    return [...new Set(ids)].slice(0, 20);
+  }
+  const text = String(value || '').trim();
+  if (text) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) return normalizeSectionIds(parsed, fallback);
+    } catch {}
+  }
+  return fallback ? [fallback] : [];
 }
 
 export function parseMultipart(body, contentType) {
