@@ -332,7 +332,9 @@ const server = http.createServer(async (req, res) => {
             title: String(track.title || 'YouTube URL'),
             volume: track.volume,
             loop: false,
-            seek: track.seek
+            seek: track.seek,
+            fadeIn: track.fadeIn,
+            fadeOut: track.fadeOut
           };
         }
         const resolved = resolveMediaPath({ archive: audioDir, uploads: uploadsDir }, media, track.id);
@@ -343,7 +345,9 @@ const server = http.createServer(async (req, res) => {
           title: resolved.item.title,
           volume: track.volume,
           loop: track.loop,
-          seek: track.seek
+          seek: track.seek,
+          fadeIn: track.fadeIn,
+          fadeOut: track.fadeOut
         };
       }).filter(Boolean);
 

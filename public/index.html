@@ -82,6 +82,31 @@
             <button id="repeat-playlist" type="button" title="Повтор">↻</button>
           </div>
 
+          <section class="music-timeline" aria-label="Позиция трека">
+            <div class="time-row">
+              <span id="music-current-time">0:00</span>
+              <span id="music-time-left">-0:00</span>
+            </div>
+            <input id="music-progress" type="range" min="0" max="0" step="0.1" value="0" aria-label="Перемотка трека">
+            <label class="output-switch segment-switch">
+              <input id="segment-loop" type="checkbox">
+              <span></span>
+              <strong>Зациклить отрезок</strong>
+            </label>
+            <div class="segment-controls">
+              <label>
+                <span>От</span>
+                <input id="segment-start" type="range" min="0" max="0" step="0.1" value="0">
+                <strong id="segment-start-label">0:00</strong>
+              </label>
+              <label>
+                <span>До</span>
+                <input id="segment-end" type="range" min="0" max="0" step="0.1" value="0">
+                <strong id="segment-end-label">0:00</strong>
+              </label>
+            </div>
+          </section>
+
           <label class="master-volume">
             <span>Общая</span>
             <input id="master-volume" type="range" min="0" max="1" step="0.01" value="0.8">
@@ -92,6 +117,12 @@
             <span>Музыка</span>
             <input id="music-volume" type="range" min="0" max="1" step="0.01" value="0.7">
             <strong id="music-volume-label">70%</strong>
+          </label>
+
+          <label class="output-switch fade-switch">
+            <input id="fade-enabled" type="checkbox">
+            <span></span>
+            <strong>Плавные переходы</strong>
           </label>
 
           <section class="playlist-box">

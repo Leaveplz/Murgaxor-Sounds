@@ -6,3 +6,4 @@ data/playlists.json
 data/uploads.json
 data/media-overrides.json
 uploads/
+android-standalone/dist/*.zip

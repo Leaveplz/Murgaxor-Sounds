@@ -44,6 +44,15 @@ const state = {
   sectionLoopDefaults: JSON.parse(localStorage.getItem('leaveplz-section-loop-defaults') || '{}'),
   loopByDefault: true,
   playlistIndex: 0,
+  repeatTrack: localStorage.getItem('leaveplz-repeat-track') === 'true',
+  shuffleEnabled: false,
+  shuffleQueue: [],
+  fadeEnabled: localStorage.getItem('leaveplz-fade-enabled') === 'true',
+  discordFadeOutTracks: [],
+  segmentLoop: localStorage.getItem('leaveplz-segment-loop') === 'true',
+  segmentStart: Number(localStorage.getItem('leaveplz-segment-start') || 0),
+  segmentEnd: Number(localStorage.getItem('leaveplz-segment-end') || 0),
+  isSeeking: false,
   previewImages: [],
   adminPassword: localStorage.getItem('leaveplz-admin-password') || ''
 };
@@ -72,6 +81,15 @@ const elements = {
   nextTrack: $('#next-track'),
   shufflePlaylist: $('#shuffle-playlist'),
   repeatPlaylist: $('#repeat-playlist'),
+  musicProgress: $('#music-progress'),
+  musicCurrentTime: $('#music-current-time'),
+  musicTimeLeft: $('#music-time-left'),
+  segmentLoop: $('#segment-loop'),
+  segmentStart: $('#segment-start'),
+  segmentEnd: $('#segment-end'),
+  segmentStartLabel: $('#segment-start-label'),
+  segmentEndLabel: $('#segment-end-label'),
+  fadeEnabled: $('#fade-enabled'),
   playlistCount: $('#playlist-count'),
   playlistTracks: $('#playlist-tracks'),
   externalPlayer: $('#external-player'),
@@ -175,7 +193,20 @@ const elements = {
   toast: $('#toast')
 };
 
-state.musicAudio.addEventListener('ended', () => playMusicFrom(state.playlistIndex + 1).catch((error) => showToast(error.message)));
+state.musicAudio.addEventListener('ended', handleMusicEnded);
+state.musicAudio.addEventListener('loadedmetadata', () => {
+  if (!state.segmentEnd || state.segmentEnd > musicDuration()) state.segmentEnd = musicDuration();
+  updateTimelineUi();
+});
+state.musicAudio.addEventListener('timeupdate', () => {
+  if (state.segmentLoop && state.segmentEnd > state.segmentStart && state.musicAudio.currentTime >= state.segmentEnd) {
+    state.musicAudio.currentTime = state.segmentStart;
+    return;
+  }
+  updateTimelineUi();
+});
+state.musicAudio.addEventListener('play', updateNowPlaying);
+state.musicAudio.addEventListener('pause', updateNowPlaying);
 
 let discordMixTimer = null;
 const durationCache = new Map();
@@ -384,11 +415,114 @@ function updateNowPlaying() {
     elements.nowPlayingTitle.textContent = 'Ничего не играет';
     elements.nowPlayingMeta.textContent = `${theme().name}: ${themeMusic().length} треков`;
     elements.mainPlayToggle.textContent = '▶';
+    updateMusicModeButtons();
+    updateTimelineUi();
     return;
   }
   elements.nowPlayingTitle.textContent = current.title;
   elements.nowPlayingMeta.textContent = state.currentExternalMusic ? 'YouTube URL' : theme().name;
   elements.mainPlayToggle.textContent = isDiscordOutput() ? '■' : (state.musicAudio.paused ? '▶' : 'Ⅱ');
+  updateMusicModeButtons();
+  updateTimelineUi();
+}
+
+function musicDuration() {
+  if (isDiscordOutput() && state.currentMusic?.duration) return state.currentMusic.duration;
+  const duration = state.musicAudio.duration;
+  return Number.isFinite(duration) && duration > 0 ? duration : 0;
+}
+
+function musicPosition() {
+  if (isDiscordOutput()) return currentDiscordMusicOffset();
+  return state.musicAudio.currentTime || 0;
+}
+
+function formatTime(seconds) {
+  const safe = Math.max(0, Math.floor(Number(seconds) || 0));
+  const minutes = Math.floor(safe / 60);
+  const rest = String(safe % 60).padStart(2, '0');
+  return `${minutes}:${rest}`;
+}
+
+function updateTimelineUi() {
+  const duration = musicDuration();
+  const position = Math.min(duration || Infinity, musicPosition());
+  if (elements.musicCurrentTime) elements.musicCurrentTime.textContent = formatTime(position);
+  if (elements.musicTimeLeft) elements.musicTimeLeft.textContent = duration ? `-${formatTime(duration - position)}` : '-0:00';
+  if (elements.musicProgress && !state.isSeeking) {
+    elements.musicProgress.max = String(duration || 0);
+    elements.musicProgress.value = String(duration ? position : 0);
+    elements.musicProgress.disabled = !duration || (isDiscordOutput() && !state.currentMusic);
+  }
+  updateSegmentUi(duration);
+}
+
+function updateSegmentUi(duration = musicDuration()) {
+  if (!elements.segmentLoop) return;
+  const end = state.segmentEnd || duration || 0;
+  const safeStart = Math.min(Math.max(0, state.segmentStart), Math.max(0, end - 1));
+  const safeEnd = Math.max(safeStart + 1, Math.min(end, duration || end));
+  if (duration) {
+    state.segmentStart = safeStart;
+    state.segmentEnd = safeEnd;
+  }
+
+  elements.segmentLoop.checked = state.segmentLoop;
+  elements.segmentStart.max = String(duration || 0);
+  elements.segmentEnd.max = String(duration || 0);
+  elements.segmentStart.value = String(duration ? state.segmentStart : 0);
+  elements.segmentEnd.value = String(duration ? state.segmentEnd : 0);
+  elements.segmentStart.disabled = !duration || !state.segmentLoop || isDiscordOutput();
+  elements.segmentEnd.disabled = !duration || !state.segmentLoop || isDiscordOutput();
+  elements.segmentStartLabel.textContent = formatTime(duration ? state.segmentStart : 0);
+  elements.segmentEndLabel.textContent = formatTime(duration ? state.segmentEnd : 0);
+}
+
+function saveSegmentBounds() {
+  localStorage.setItem('leaveplz-segment-start', String(state.segmentStart));
+  localStorage.setItem('leaveplz-segment-end', String(state.segmentEnd));
+}
+
+function updateMusicModeButtons() {
+  elements.repeatPlaylist.classList.toggle('active', state.repeatTrack);
+  elements.repeatPlaylist.setAttribute('aria-pressed', String(state.repeatTrack));
+  elements.shufflePlaylist.classList.toggle('active', state.shuffleEnabled);
+  elements.shufflePlaylist.setAttribute('aria-pressed', String(state.shuffleEnabled));
+  elements.fadeEnabled.checked = state.fadeEnabled;
+}
+
+function resetShuffle() {
+  state.shuffleEnabled = false;
+  state.shuffleQueue = [];
+  updateMusicModeButtons();
+}
+
+function buildShuffleQueue(excludeIndex = state.playlistIndex) {
+  const tracks = currentTracks();
+  state.shuffleQueue = tracks
+    .map((_, index) => index)
+    .filter((index) => index !== excludeIndex)
+    .sort(() => Math.random() - 0.5);
+}
+
+function nextShuffleIndex() {
+  const tracks = currentTracks();
+  if (!tracks.length) return 0;
+  if (!state.shuffleQueue.length) buildShuffleQueue(state.playlistIndex);
+  return state.shuffleQueue.shift() ?? ((state.playlistIndex + 1) % tracks.length);
+}
+
+function previousShuffleIndex() {
+  return Math.max(0, state.playlistIndex - 1);
+}
+
+function handleMusicEnded() {
+  const nextIndex = state.repeatTrack
+    ? state.playlistIndex
+    : state.shuffleEnabled
+      ? nextShuffleIndex()
+      : state.playlistIndex + 1;
+  playMusicFrom(nextIndex, { preserveShuffle: true }).catch((error) => showToast(error.message));
 }
 
 function renderActiveState() {
@@ -564,28 +698,117 @@ function discordMixTracks() {
       type: 'youtube',
       url: state.currentExternalMusic.url,
       title: state.currentExternalMusic.title,
-      volume: state.masterVolume * state.musicVolume,
+      volume: targetMusicVolume(),
       loop: false,
-      seek: currentDiscordMusicOffset()
+      seek: currentDiscordMusicOffset(),
+      fadeIn: state.fadeEnabled ? discordFadeSeconds() : 0
     }];
   } else if (state.currentMusic) {
     musicTrack = [{
       type: 'local',
       id: state.currentMusic.id,
-      volume: state.masterVolume * state.musicVolume,
+      volume: targetMusicVolume(),
       loop: false,
-      seek: currentDiscordMusicOffset()
+      seek: currentDiscordMusicOffset(),
+      fadeIn: state.fadeEnabled ? discordFadeSeconds() : 0
     }];
   }
   const soundTracks = [...state.activeSounds.values()].map((item) => ({
+    ...makeDiscordSoundTrack(item),
+    fadeIn: state.fadeEnabled ? discordFadeSeconds() : 0
+  }));
+  return [...musicTrack, ...soundTracks, ...state.discordFadeOutTracks];
+}
+
+function targetMusicVolume() {
+  return state.masterVolume * state.musicVolume;
+}
+
+function targetSoundVolume(itemOrVolume) {
+  const volume = typeof itemOrVolume === 'number' ? itemOrVolume : itemOrVolume?.volume;
+  return Number(volume || 0) * state.masterVolume;
+}
+
+function fadeDuration() {
+  return state.fadeEnabled ? 650 : 0;
+}
+
+function discordFadeSeconds() {
+  return 0.7;
+}
+
+function fadeAudio(audio, toVolume, duration = fadeDuration()) {
+  if (!audio) return Promise.resolve();
+  const target = Math.max(0, Math.min(1, Number(toVolume) || 0));
+  if (!duration) {
+    audio.volume = target;
+    return Promise.resolve();
+  }
+  const from = Number(audio.volume) || 0;
+  const startedAt = performance.now();
+  return new Promise((resolve) => {
+    const tick = (now) => {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      audio.volume = from + (target - from) * progress;
+      if (progress < 1) requestAnimationFrame(tick);
+      else resolve();
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+function makeCurrentDiscordMusicTrack() {
+  if (state.currentExternalMusic) {
+    return {
+      type: 'youtube',
+      url: state.currentExternalMusic.url,
+      title: state.currentExternalMusic.title,
+      volume: targetMusicVolume(),
+      loop: false,
+      seek: currentDiscordMusicOffset()
+    };
+  }
+  if (state.currentMusic) {
+    return {
+      type: 'local',
+      id: state.currentMusic.id,
+      title: state.currentMusic.title,
+      volume: targetMusicVolume(),
+      loop: false,
+      seek: currentDiscordMusicOffset()
+    };
+  }
+  return null;
+}
+
+function makeDiscordSoundTrack(item) {
+  return {
     type: 'local',
     role: 'sound',
     id: item.sound.id,
-    volume: item.volume * state.masterVolume,
+    title: item.sound.title,
+    volume: targetSoundVolume(item),
     loop: item.loop,
     seek: currentDiscordSoundOffset(item)
-  }));
-  return [...musicTrack, ...soundTracks];
+  };
+}
+
+function addDiscordFadeOutTrack(track) {
+  if (!state.fadeEnabled || !track) return false;
+  const fadeId = `${track.role || 'music'}:${track.id || track.url || track.title}:${Date.now()}`;
+  state.discordFadeOutTracks.push({
+    ...track,
+    fadeId,
+    fadeOut: discordFadeSeconds(),
+    fadeIn: 0,
+    seek: Math.max(0, Number(track.seek || 0)),
+    loop: false
+  });
+  setTimeout(() => {
+    state.discordFadeOutTracks = state.discordFadeOutTracks.filter((item) => item.fadeId !== fadeId);
+    queueDiscordMixSync();
+  }, Math.ceil(discordFadeSeconds() * 1000) + 100);
+  return true;
 }
 
 async function startSound(id, options = {}) {
@@ -611,11 +834,12 @@ async function startSound(id, options = {}) {
 
   const audio = new Audio(`/audio/${encodeURIComponent(id)}`);
   audio.loop = loop;
-  audio.volume = volume * state.masterVolume;
+  audio.volume = state.fadeEnabled ? 0 : volume * state.masterVolume;
 
   state.activeSounds.set(id, { sound, audio, volume, loop, endTimer: null, offset: 0, startedAt: 0, duration: 0 });
   audio.addEventListener('ended', () => stopSound(id));
   await audio.play();
+  fadeAudio(audio, targetSoundVolume(volume)).catch(() => {});
   renderSounds();
 }
 
@@ -623,10 +847,28 @@ function stopSound(id) {
   const item = state.activeSounds.get(id);
   if (!item) return;
   clearSoundEndTimer(item);
-  item.audio?.pause();
-  if (item.audio) item.audio.currentTime = 0;
-  state.activeSounds.delete(id);
-  renderSounds();
+  if (isDiscordOutput() && state.fadeEnabled) {
+    addDiscordFadeOutTrack(makeDiscordSoundTrack(item));
+    state.activeSounds.delete(id);
+    renderSounds();
+    syncDiscordMix().catch((error) => showToast(error.message));
+    return;
+  }
+  const audio = item.audio;
+  if (audio && state.fadeEnabled) {
+    state.activeSounds.delete(id);
+    renderSounds();
+    fadeAudio(audio, 0)
+      .finally(() => {
+        audio.pause();
+        audio.currentTime = 0;
+      });
+  } else {
+    audio?.pause();
+    if (audio) audio.currentTime = 0;
+    state.activeSounds.delete(id);
+    renderSounds();
+  }
   queueDiscordMixSync();
 }
 
@@ -635,7 +877,7 @@ function setVolume(id, volume) {
   const item = state.activeSounds.get(id);
   if (item) {
     item.volume = volume;
-    if (item.audio) item.audio.volume = volume * state.masterVolume;
+    if (item.audio) item.audio.volume = targetSoundVolume(item);
     else queueDiscordMixSync();
   }
 }
@@ -668,6 +910,9 @@ function toggleSectionLoopDefault(sectionId) {
 
 function pauseAllSounds() {
   if (isDiscordOutput()) {
+    if (state.fadeEnabled) {
+      state.activeSounds.forEach((item) => addDiscordFadeOutTrack(makeDiscordSoundTrack(item)));
+    }
     state.activeSounds.forEach(clearSoundEndTimer);
     state.activeSounds.clear();
     renderSounds();
@@ -687,15 +932,24 @@ function pauseAllSounds() {
 }
 
 function stopAllSounds() {
+  if (isDiscordOutput() && state.fadeEnabled) {
+    state.activeSounds.forEach((item) => addDiscordFadeOutTrack(makeDiscordSoundTrack(item)));
+    state.activeSounds.forEach(clearSoundEndTimer);
+    state.activeSounds.clear();
+    renderSounds();
+    syncDiscordMix().catch((error) => showToast(error.message));
+    return;
+  }
   [...state.activeSounds.keys()].forEach(stopSound);
   if (isDiscordOutput()) {
     queueDiscordMixSync();
   }
 }
 
-async function playMusicFrom(index = state.playlistIndex) {
+async function playMusicFrom(index = state.playlistIndex, options = {}) {
   const tracks = currentTracks();
   if (!tracks.length) return;
+  const outgoingDiscordMusic = isDiscordOutput() && state.fadeEnabled ? makeCurrentDiscordMusicTrack() : null;
   state.playlistIndex = (index + tracks.length) % tracks.length;
   const track = tracks[state.playlistIndex];
 
@@ -705,8 +959,11 @@ async function playMusicFrom(index = state.playlistIndex) {
   state.currentExternalMusic = null;
 
   if (isDiscordOutput()) {
+    addDiscordFadeOutTrack(outgoingDiscordMusic);
     state.musicAudio.pause();
     state.musicAudio.removeAttribute('src');
+    state.musicAudio.load();
+    media.duration = await mediaDuration(media.id);
     startDiscordMusicClock(0);
     await syncDiscordMix();
     updateNowPlaying();
@@ -714,9 +971,15 @@ async function playMusicFrom(index = state.playlistIndex) {
     return;
   }
 
+  const shouldFadeOut = state.fadeEnabled && !state.musicAudio.paused && state.musicAudio.src;
+  if (shouldFadeOut) await fadeAudio(state.musicAudio, 0);
   state.musicAudio.src = `/audio/${encodeURIComponent(media.id)}`;
-  state.musicAudio.volume = state.masterVolume * state.musicVolume;
+  state.musicAudio.volume = state.fadeEnabled ? 0 : targetMusicVolume();
+  if (state.segmentLoop && state.segmentEnd > state.segmentStart) {
+    state.musicAudio.currentTime = state.segmentStart;
+  }
   await state.musicAudio.play();
+  fadeAudio(state.musicAudio, targetMusicVolume()).catch(() => {});
   updateNowPlaying();
 }
 
@@ -744,12 +1007,13 @@ async function playExternalUrl(url, { title = 'YouTube URL', silent = false } = 
   if (!silent) showToast('YouTube запущен через Discord');
 }
 
-function toggleMusic() {
+async function toggleMusic() {
   if (!state.currentMusic && !state.currentExternalMusic) {
     playMusicFrom(0).catch((error) => showToast(error.message));
     return;
   }
   if (isDiscordOutput()) {
+    addDiscordFadeOutTrack(makeCurrentDiscordMusicTrack());
     state.currentMusic = null;
     state.currentExternalMusic = null;
     resetDiscordMusicClock();
@@ -758,8 +1022,17 @@ function toggleMusic() {
       .catch((error) => showToast(error.message));
     return;
   }
-  if (state.musicAudio.paused) state.musicAudio.play().catch((error) => showToast(error.message));
-  else state.musicAudio.pause();
+  if (state.musicAudio.paused) {
+    if (state.fadeEnabled) state.musicAudio.volume = 0;
+    await state.musicAudio.play();
+    fadeAudio(state.musicAudio, targetMusicVolume()).catch(() => {});
+  } else if (state.fadeEnabled) {
+    await fadeAudio(state.musicAudio, 0);
+    state.musicAudio.pause();
+    state.musicAudio.volume = targetMusicVolume();
+  } else {
+    state.musicAudio.pause();
+  }
   updateNowPlaying();
 }
 
@@ -823,6 +1096,10 @@ function saveSettings() {
   localStorage.setItem('leaveplz-collapsed-sections', JSON.stringify([...state.collapsedSections]));
   localStorage.setItem('leaveplz-loop-overrides', JSON.stringify(state.loopOverrides));
   localStorage.setItem('leaveplz-section-loop-defaults', JSON.stringify(state.sectionLoopDefaults));
+  localStorage.setItem('leaveplz-repeat-track', String(state.repeatTrack));
+  localStorage.setItem('leaveplz-fade-enabled', String(state.fadeEnabled));
+  localStorage.setItem('leaveplz-segment-loop', String(state.segmentLoop));
+  saveSegmentBounds();
   showToast('Настройки сохранены');
 }
 
@@ -1467,6 +1744,8 @@ elements.themeGrid.addEventListener('click', (event) => {
   const button = event.target.closest('[data-theme]');
   if (!button) return;
   state.selectedTheme = button.dataset.theme;
+  resetShuffle();
+  state.playlistIndex = 0;
   state.musicAudio.pause();
   state.currentMusic = null;
   state.currentExternalMusic = null;
@@ -1534,9 +1813,9 @@ elements.masterVolume.addEventListener('input', (event) => {
   state.masterVolume = Number(event.target.value);
   elements.masterVolumeLabel.textContent = `${Math.round(state.masterVolume * 100)}%`;
   state.activeSounds.forEach((item) => {
-    if (item.audio) item.audio.volume = item.volume * state.masterVolume;
+    if (item.audio) item.audio.volume = targetSoundVolume(item);
   });
-  state.musicAudio.volume = state.masterVolume * state.musicVolume;
+  state.musicAudio.volume = targetMusicVolume();
   queueDiscordMixSync();
 });
 
@@ -1545,23 +1824,79 @@ elements.musicVolumeLabel.textContent = `${Math.round(state.musicVolume * 100)}%
 elements.musicVolume.addEventListener('input', (event) => {
   state.musicVolume = Number(event.target.value);
   elements.musicVolumeLabel.textContent = `${Math.round(state.musicVolume * 100)}%`;
-  state.musicAudio.volume = state.masterVolume * state.musicVolume;
+  state.musicAudio.volume = targetMusicVolume();
   queueDiscordMixSync();
 });
 
 elements.pauseAll.addEventListener('click', pauseAllSounds);
 elements.stopAll.addEventListener('click', stopAllSounds);
 elements.saveSettings.addEventListener('click', saveSettings);
-elements.mainPlayToggle.addEventListener('click', toggleMusic);
-elements.playPlaylist.addEventListener('click', () => playMusicFrom(0).catch((error) => showToast(error.message)));
-elements.prevTrack.addEventListener('click', () => playMusicFrom(state.playlistIndex - 1).catch((error) => showToast(error.message)));
-elements.nextTrack.addEventListener('click', () => playMusicFrom(state.playlistIndex + 1).catch((error) => showToast(error.message)));
+elements.mainPlayToggle.addEventListener('click', () => toggleMusic().catch((error) => showToast(error.message)));
+elements.playPlaylist.addEventListener('click', () => playMusicFrom(state.playlistIndex).catch((error) => showToast(error.message)));
+elements.prevTrack.addEventListener('click', () => playMusicFrom(state.shuffleEnabled ? previousShuffleIndex() : state.playlistIndex - 1, { preserveShuffle: true }).catch((error) => showToast(error.message)));
+elements.nextTrack.addEventListener('click', () => playMusicFrom(state.shuffleEnabled ? nextShuffleIndex() : state.playlistIndex + 1, { preserveShuffle: true }).catch((error) => showToast(error.message)));
 elements.shufflePlaylist.addEventListener('click', () => {
   const tracks = currentTracks();
-  state.playlistIndex = Math.floor(Math.random() * Math.max(1, tracks.length));
-  playMusicFrom(state.playlistIndex).catch((error) => showToast(error.message));
+  if (!tracks.length) return showToast('В этой теме нет музыки');
+  state.shuffleEnabled = !state.shuffleEnabled;
+  if (state.shuffleEnabled) {
+    buildShuffleQueue(-1);
+    playMusicFrom(nextShuffleIndex(), { preserveShuffle: true }).catch((error) => showToast(error.message));
+  } else {
+    state.shuffleQueue = [];
+    updateMusicModeButtons();
+  }
 });
-elements.repeatPlaylist.addEventListener('click', () => showToast('Повтор включён автоматически: следующий трек пойдёт по кругу'));
+elements.repeatPlaylist.addEventListener('click', () => {
+  state.repeatTrack = !state.repeatTrack;
+  localStorage.setItem('leaveplz-repeat-track', String(state.repeatTrack));
+  updateMusicModeButtons();
+  showToast(state.repeatTrack ? 'Повтор текущего трека включён' : 'Повтор текущего трека выключен');
+});
+elements.fadeEnabled.addEventListener('change', () => {
+  state.fadeEnabled = elements.fadeEnabled.checked;
+  localStorage.setItem('leaveplz-fade-enabled', String(state.fadeEnabled));
+  updateMusicModeButtons();
+});
+elements.musicProgress.addEventListener('input', () => {
+  state.isSeeking = true;
+  elements.musicCurrentTime.textContent = formatTime(elements.musicProgress.value);
+});
+elements.musicProgress.addEventListener('change', () => {
+  const position = Number(elements.musicProgress.value) || 0;
+  if (isDiscordOutput() && state.currentMusic) {
+    startDiscordMusicClock(position);
+    syncDiscordMix().catch((error) => showToast(error.message));
+  } else if (!isDiscordOutput()) {
+    state.musicAudio.currentTime = position;
+  }
+  if (!isDiscordOutput() && state.segmentLoop && state.segmentEnd > state.segmentStart && position >= state.segmentEnd) {
+    state.musicAudio.currentTime = state.segmentStart;
+  }
+  state.isSeeking = false;
+  updateTimelineUi();
+});
+elements.segmentLoop.addEventListener('change', () => {
+  state.segmentLoop = elements.segmentLoop.checked;
+  const duration = musicDuration();
+  if (state.segmentLoop && duration && (!state.segmentEnd || state.segmentEnd <= state.segmentStart)) {
+    state.segmentStart = 0;
+    state.segmentEnd = duration;
+  }
+  localStorage.setItem('leaveplz-segment-loop', String(state.segmentLoop));
+  saveSegmentBounds();
+  updateTimelineUi();
+});
+elements.segmentStart.addEventListener('input', () => {
+  state.segmentStart = Math.min(Number(elements.segmentStart.value) || 0, Math.max(0, state.segmentEnd - 1));
+  saveSegmentBounds();
+  updateTimelineUi();
+});
+elements.segmentEnd.addEventListener('input', () => {
+  state.segmentEnd = Math.max(Number(elements.segmentEnd.value) || 0, state.segmentStart + 1);
+  saveSegmentBounds();
+  updateTimelineUi();
+});
 
 document.querySelector('.source-tabs').addEventListener('click', (event) => {
   const button = event.target.closest('[data-source-tab]');
@@ -1584,6 +1919,7 @@ elements.playlistTracks.addEventListener('click', async (event) => {
   try {
     if (playButton) {
       state.playlistIndex = Number(playButton.dataset.playTrack);
+      resetShuffle();
       await playMusicFrom(state.playlistIndex);
     }
   } catch (error) {
@@ -1754,3 +2090,4 @@ await Promise.all([
 ]).catch((error) => showToast(error.message));
 
 setInterval(() => refreshDiscordStatus().catch(() => {}), 10000);
+setInterval(updateTimelineUi, 500);

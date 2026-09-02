@@ -475,7 +475,13 @@ export class DiscordSoundBot {
 
     const chains = usable.map((track, index) => {
       const volume = Math.max(0, Math.min(1.5, Number(track.volume ?? 1)));
-      return `[${index}:a]volume=${volume.toFixed(3)},aresample=48000[a${index}]`;
+      const filters = [`volume=${volume.toFixed(3)}`];
+      const fadeIn = Math.max(0, Math.min(5, Number(track.fadeIn || 0)));
+      const fadeOut = Math.max(0, Math.min(5, Number(track.fadeOut || 0)));
+      if (fadeIn > 0) filters.push(`afade=t=in:st=0:d=${fadeIn.toFixed(3)}`);
+      if (fadeOut > 0) filters.push(`afade=t=out:st=0:d=${fadeOut.toFixed(3)}`);
+      filters.push('aresample=48000');
+      return `[${index}:a]${filters.join(',')}[a${index}]`;
     });
     const inputs = usable.map((_, index) => `[a${index}]`).join('');
     const filter = `${chains.join(';')};${inputs}amix=inputs=${usable.length}:duration=longest:dropout_transition=2,volume=1.0[out]`;

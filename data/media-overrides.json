@@ -70,5 +70,725 @@
     "themeId": null,
     "image": "uploads/images/1787659831345-dea51b2b-de55f641a14744607ef114714f9f3ee3.jpg",
     "editedAt": "2026-08-25T13:01:50.843Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1jdXRsYXNzX2ZpZ2h0X2xvb3Aub2dn": {
+    "title": "Бой на саблях",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787758591142-83f0e99d-bb80b51f7358117d99c5b4a3456d4f6d.jpg",
+    "editedAt": "2026-08-26T15:36:32.412Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1icm9hZHNpZGUxLm9nZw": {
+    "title": "Бортовой залп 1",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787758629882-63f9b57b-zalp.webp",
+    "editedAt": "2026-08-26T15:37:10.909Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1icm9hZHNpZGUyLm9nZw": {
+    "title": "Бортовой залп 2",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787758629882-63f9b57b-zalp.webp",
+    "editedAt": "2026-08-26T15:37:24.399Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1icm9hZHNpZGUzLm9nZw": {
+    "title": "Бортовой залп 3",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787758629882-63f9b57b-zalp.webp",
+    "editedAt": "2026-08-26T15:37:34.556Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1icm9hZHNpZGU0Lm9nZw": {
+    "title": "Бортовой залп 4",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787758629882-63f9b57b-zalp.webp",
+    "editedAt": "2026-08-26T15:37:42.130Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1ib3dfd2FzaF9tZWRfbG9vcC5vZ2c": {
+    "title": "Волна у носа",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787758699025-d9ea6951-3a31019b8ed011eeadfef6c574779d3e_upscaled.jpg",
+    "editedAt": "2026-08-26T15:38:19.817Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1zaGlwc19iZWxsLm9nZw": {
+    "title": "Корабельный колокол",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787758746140-b020481a-prev-tmaq1f-640x998.webp",
+    "editedAt": "2026-08-26T15:39:07.079Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1jaGVlcjEub2dn": {
+    "title": "Крики команды 1",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787758822722-467e322e-badfon-art-korabl-more-piraty.webp",
+    "editedAt": "2026-08-26T15:40:23.843Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1jaGVlcjIub2dn": {
+    "title": "Крики команды 2",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787758822722-467e322e-badfon-art-korabl-more-piraty.webp",
+    "editedAt": "2026-08-26T15:40:35.378Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1jaGVlcjMub2dn": {
+    "title": "Крики команды 3",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787758822722-467e322e-badfon-art-korabl-more-piraty.webp",
+    "editedAt": "2026-08-26T15:40:43.896Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1jaGVlcjQub2dn": {
+    "title": "Крики команды 4",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787758822722-467e322e-badfon-art-korabl-more-piraty.webp",
+    "editedAt": "2026-08-26T15:40:56.199Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1zYWlsb3JzX3Nob3V0aW5nX2xvb3Aub2dn": {
+    "title": "Крики моряков",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787758949876-9e8bfce7-03513891298ee8663c1a8e06a4f6b2e7.jpg",
+    "editedAt": "2026-08-26T15:42:31.221Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1ib3dfd2FzaF9saWdodF9sb29wLm9nZw": {
+    "title": "Лёгкая волна у носа",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787758699025-d9ea6951-3a31019b8ed011eeadfef6c574779d3e_upscaled.jpg",
+    "editedAt": "2026-08-26T15:42:48.398Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1ib3dfd2FzaF9oZWF2eV9sb29wLm9nZw": {
+    "title": "Сильная волна у носа",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787758699025-d9ea6951-3a31019b8ed011eeadfef6c574779d3e_upscaled.jpg",
+    "editedAt": "2026-08-26T15:42:58.196Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1tdXNpY19kcnVua2VuX3NhaWxvci5vZ2c": {
+    "title": "Песня пьяного моряка",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787759033065-80441f68-e26b6ba49522215a6396627db961e8b0.jpg",
+    "editedAt": "2026-08-26T15:43:53.629Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1tdXNpY19zaXJlbnNfc29uZy5vZ2c": {
+    "title": "Песня сирен",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787759068770-ca754cbf-901b42b60eefa37cc8a7cb2b0e18f727.jpg",
+    "editedAt": "2026-08-26T15:44:29.608Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1kYW1hZ2UxLm9nZw": {
+    "title": "Повреждение 1",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787759132426-4aebee73-popadanie.jpg",
+    "editedAt": "2026-08-26T15:45:33.168Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1kYW1hZ2UyLm9nZw": {
+    "title": "Повреждение 2",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787759132426-4aebee73-popadanie.jpg",
+    "editedAt": "2026-08-26T15:45:40.542Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1kYW1hZ2UzLm9nZw": {
+    "title": "Повреждение 3",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787759132426-4aebee73-popadanie.jpg",
+    "editedAt": "2026-08-26T15:45:45.862Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1kYW1hZ2U0Lm9nZw": {
+    "title": "Повреждение 4",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787759132426-4aebee73-popadanie.jpg",
+    "editedAt": "2026-08-26T15:45:52.910Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1iZWxvd19kZWNrc19sb29wLm9nZw": {
+    "title": "Под палубой",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787759263498-dbc8e69a-paluba.jpg",
+    "editedAt": "2026-08-26T15:47:44.172Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1ob2lzdF9zYWlsLm9nZw": {
+    "title": "Поднять парус",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787759369837-6bbad5b7-pirat-muzhchina-machta-molniia.webp",
+    "editedAt": "2026-08-26T15:49:30.727Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1zaW5nbGVfY2Fubm9uMS5vZ2c": {
+    "title": "Пушечный выстрел 1",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787759505237-7eeb48c5--.jpg",
+    "editedAt": "2026-08-26T15:51:45.852Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1zaW5nbGVfY2Fubm9uMi5vZ2c": {
+    "title": "Пушечный выстрел 2",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787759505237-7eeb48c5--.jpg",
+    "editedAt": "2026-08-26T15:51:56.604Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1zaW5nbGVfY2Fubm9uMy5vZ2c": {
+    "title": "Пушечный выстрел 3",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787759505237-7eeb48c5--.jpg",
+    "editedAt": "2026-08-26T15:52:02.646Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1zaW5nbGVfY2Fubm9uNC5vZ2c": {
+    "title": "Пушечный выстрел 4",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787759505237-7eeb48c5--.jpg",
+    "editedAt": "2026-08-26T15:52:09.732Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1yZXBhaXJzX2xvb3Aub2dn": {
+    "title": "Ремонт корабля",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787773475174-307e1149-repair-ship.jpg",
+    "editedAt": "2026-08-26T19:44:35.997Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1iZWF0X3RvX3F1YXJ0ZXJzLm9nZw": {
+    "title": "Сбор к бою",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787758822722-467e322e-badfon-art-korabl-more-piraty.webp",
+    "editedAt": "2026-08-26T19:46:54.224Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1ib3N1bnNfd2hpc3RsZS5vZ2c": {
+    "title": "Свисток боцмана",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787773649058-f4b08076-svistok.webp",
+    "editedAt": "2026-08-26T19:47:29.856Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1zZWFndWxsc19sb29wLm9nZw": {
+    "title": "Чайки",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "seagulls.webp",
+    "editedAt": "2026-08-26T19:48:11.452Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1ibGVha3dhdGVyLWRvY2tzLUJsZWFrd2F0ZXJfRG9ja3Mtc2VhZ3VsbHNfbG9vcC5vZ2c": {
+    "title": "Чайки",
+    "type": "sound",
+    "sectionId": "soundpad-bleakwater-docks",
+    "sectionName": "Мрачные доки",
+    "sectionIds": [
+      "soundpad-bleakwater-docks"
+    ],
+    "themeId": null,
+    "image": "seagulls.webp",
+    "editedAt": "2026-08-26T19:48:18.693Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1tYXN0X2NyZWFrc19sb29wLm9nZw": {
+    "title": "Скрип мачты",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787773801578-d8fb12ec-korabl_parusa_art_1225170_1080x1920.jpg",
+    "editedAt": "2026-08-26T19:50:03.064Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1zYWlsc19sdWZmaW5nX2xvb3Aub2dn": {
+    "title": "Хлопающие паруса",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787773801578-d8fb12ec-korabl_parusa_art_1225170_1080x1920.jpg",
+    "editedAt": "2026-08-26T19:51:05.733Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1iaWxnZV9wdW1wc19sb29wLm9nZw": {
+    "title": "Трюмные помпы",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787773933528-facee1c4-715482_image_origin.jpg",
+    "editedAt": "2026-08-26T19:52:14.275Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hZ2Utb2Ytc2FpbC1BZ2Vfb2ZfU2FpbC1kZWNrX2FjdGl2aXR5X2xvb3Aub2dn": {
+    "title": "Суета на палубе",
+    "type": "sound",
+    "sectionId": "soundpad-age-of-sail",
+    "sectionName": "Эпоха парусов",
+    "sectionIds": [
+      "soundpad-age-of-sail"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787773991531-8f73a151--BHgO9aA9k8lH1lQcolfy_gHgVwH7aJqi4eQz6f0ZfvvYTJYL1SGZIuiw23fUmMxPNNdCz_6btKN1kLK.webp",
+    "editedAt": "2026-08-26T19:53:12.163Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC12YW1waXJlLVZhbXBpcmUtYXV0b21hdGljX2ZpcmUxLm9nZw": {
+    "title": "Автоматический огонь 1",
+    "type": "sound",
+    "sectionId": "soundpad-vampire",
+    "sectionName": "Вампиры",
+    "sectionIds": [
+      "soundpad-vampire"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787774497030-29aef75a-fireshot.webp",
+    "editedAt": "2026-08-26T20:01:37.787Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC12YW1waXJlLVZhbXBpcmUtYXV0b21hdGljX2ZpcmUyLm9nZw": {
+    "title": "Автоматический огонь 2",
+    "type": "sound",
+    "sectionId": "soundpad-vampire",
+    "sectionName": "Вампиры",
+    "sectionIds": [
+      "soundpad-vampire"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787774497030-29aef75a-fireshot.webp",
+    "editedAt": "2026-08-26T20:01:44.632Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC12YW1waXJlLVZhbXBpcmUtYXV0b21hdGljX2ZpcmUzLm9nZw": {
+    "title": "Автоматический огонь 3",
+    "type": "sound",
+    "sectionId": "soundpad-vampire",
+    "sectionName": "Вампиры",
+    "sectionIds": [
+      "soundpad-vampire"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787774497030-29aef75a-fireshot.webp",
+    "editedAt": "2026-08-26T20:01:50.596Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC12YW1waXJlLVZhbXBpcmUtYXV0b21hdGljX2ZpcmU0Lm9nZw": {
+    "title": "Автоматический огонь 4",
+    "type": "sound",
+    "sectionId": "soundpad-vampire",
+    "sectionName": "Вампиры",
+    "sectionIds": [
+      "soundpad-vampire"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787774497030-29aef75a-fireshot.webp",
+    "editedAt": "2026-08-26T20:01:57.782Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hbGllbi1zdGFyc2hpcC1BbGllbl9TdGFyc2hpcC1hc3NhdWx0X3dlYXBvbjEub2dn": {
+    "title": "Автоматная очередь 1",
+    "type": "sound",
+    "sectionId": "soundpad-alien-starship",
+    "sectionName": "Инопланетный звездолёт",
+    "sectionIds": [
+      "soundpad-alien-starship"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787774497030-29aef75a-fireshot.webp",
+    "editedAt": "2026-08-26T20:02:12.157Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hbGllbi1zdGFyc2hpcC1BbGllbl9TdGFyc2hpcC1hc3NhdWx0X3dlYXBvbjIub2dn": {
+    "title": "Автоматная очередь 2",
+    "type": "sound",
+    "sectionId": "soundpad-alien-starship",
+    "sectionName": "Инопланетный звездолёт",
+    "sectionIds": [
+      "soundpad-alien-starship"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787774497030-29aef75a-fireshot.webp",
+    "editedAt": "2026-08-26T20:02:40.571Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hbGllbi1zdGFyc2hpcC1BbGllbl9TdGFyc2hpcC1hc3NhdWx0X3dlYXBvbjMub2dn": {
+    "title": "Автоматная очередь 3",
+    "type": "sound",
+    "sectionId": "soundpad-alien-starship",
+    "sectionName": "Инопланетный звездолёт",
+    "sectionIds": [
+      "soundpad-alien-starship"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787774497030-29aef75a-fireshot.webp",
+    "editedAt": "2026-08-26T20:02:46.382Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hbGllbi1zdGFyc2hpcC1BbGllbl9TdGFyc2hpcC1hc3NhdWx0X3dlYXBvbjQub2dn": {
+    "title": "Автоматная очередь 4",
+    "type": "sound",
+    "sectionId": "soundpad-alien-starship",
+    "sectionName": "Инопланетный звездолёт",
+    "sectionIds": [
+      "soundpad-alien-starship"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787774497030-29aef75a-fireshot.webp",
+    "editedAt": "2026-08-26T20:02:55.997Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hbGllbi1zdGFyc2hpcC1BbGllbl9TdGFyc2hpcC1zaHJpZWsxLm9nZw": {
+    "title": "Визг 1",
+    "type": "sound",
+    "sectionId": "soundpad-alien-starship",
+    "sectionName": "Инопланетный звездолёт",
+    "sectionIds": [
+      "soundpad-alien-starship"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787774679764-b636b88b-vizg-alien.webp",
+    "editedAt": "2026-08-26T20:04:41.162Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hbGllbi1zdGFyc2hpcC1BbGllbl9TdGFyc2hpcC1zaHJpZWsyLm9nZw": {
+    "title": "Визг 2",
+    "type": "sound",
+    "sectionId": "soundpad-alien-starship",
+    "sectionName": "Инопланетный звездолёт",
+    "sectionIds": [
+      "soundpad-alien-starship"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787774679764-b636b88b-vizg-alien.webp",
+    "editedAt": "2026-08-26T20:04:47.858Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hbGllbi1zdGFyc2hpcC1BbGllbl9TdGFyc2hpcC1zaHJpZWszLm9nZw": {
+    "title": "Визг 3",
+    "type": "sound",
+    "sectionId": "soundpad-alien-starship",
+    "sectionName": "Инопланетный звездолёт",
+    "sectionIds": [
+      "soundpad-alien-starship"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787774679764-b636b88b-vizg-alien.webp",
+    "editedAt": "2026-08-26T20:04:52.996Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hbGllbi1zdGFyc2hpcC1BbGllbl9TdGFyc2hpcC1zaHJpZWs0Lm9nZw": {
+    "title": "Визг 4",
+    "type": "sound",
+    "sectionId": "soundpad-alien-starship",
+    "sectionName": "Инопланетный звездолёт",
+    "sectionIds": [
+      "soundpad-alien-starship"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787774679764-b636b88b-vizg-alien.webp",
+    "editedAt": "2026-08-26T20:04:58.208Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC12YW1waXJlLVZhbXBpcmUtcnVuX2luX2Jvb3RzLm9nZw": {
+    "title": "Бег в ботинках",
+    "type": "sound",
+    "sectionId": "soundpad-vampire",
+    "sectionName": "Вампиры",
+    "sectionIds": [
+      "soundpad-vampire"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787776420384-10066d83-5dbb99127a2a11eea15b9209e5449f76_upscaled.jpg",
+    "editedAt": "2026-08-26T20:33:41.210Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC12YW1waXJlLVZhbXBpcmUtcnVuX2luX2hlZWxzLm9nZw": {
+    "title": "Бег на каблуках",
+    "type": "sound",
+    "sectionId": "soundpad-vampire",
+    "sectionName": "Вампиры",
+    "sectionIds": [
+      "soundpad-vampire"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787776500106-fa79c8c1-pop-art-tufli-kabluk-vektor.webp",
+    "editedAt": "2026-08-26T20:35:00.659Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC12YW1waXJlLVZhbXBpcmUtaGVsaWNvcHRlcl9ob3Zlcl9sb29wLm9nZw": {
+    "title": "Вертолёт зависает фон",
+    "type": "sound",
+    "sectionId": "soundpad-vampire",
+    "sectionName": "Вампиры",
+    "sectionIds": [
+      "soundpad-vampire"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787776642470-85147866-b97389fcf144d10334b2c2d0d0959be0.jpg",
+    "editedAt": "2026-08-26T20:37:25.416Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC12YW1waXJlLVZhbXBpcmUtaGVsaWNvcHRlcl9wYXNzYnkub2dn": {
+    "title": "Вертолёт пролетает",
+    "type": "sound",
+    "sectionId": "soundpad-vampire",
+    "sectionName": "Вампиры",
+    "sectionIds": [
+      "soundpad-vampire"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787776642470-85147866-b97389fcf144d10334b2c2d0d0959be0.jpg",
+    "editedAt": "2026-08-26T20:37:33.799Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC12YW1waXJlLVZhbXBpcmUtY2x1Yl92aXBfcm9vbV9sb29wLm9nZw": {
+    "title": "ВИП-комната клуба",
+    "type": "sound",
+    "sectionId": "soundpad-vampire",
+    "sectionName": "Вампиры",
+    "sectionIds": [
+      "soundpad-vampire"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787776757464-6783f3e3-2bd92abe63d2bbd66ec62f6fd3ddde81.jpg",
+    "editedAt": "2026-08-26T20:39:18.132Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC12YW1waXJlLVZhbXBpcmUtbXVzaWNfdGhlbWVfbG9vcC5vZ2c": {
+    "title": "Главная тема",
+    "type": "sound",
+    "sectionId": "soundpad-vampire",
+    "sectionName": "Вампиры",
+    "sectionIds": [
+      "soundpad-vampire"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787776789911-6088b89e-0a6936b4b390dd498cdbaa983e260e5a.jpg",
+    "editedAt": "2026-08-26T20:39:50.759Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hbGllbi1zdGFyc2hpcC1BbGllbl9TdGFyc2hpcC1lZ2dfaGF0Y2gxLm9nZw": {
+    "title": "Вылупление 1",
+    "type": "sound",
+    "sectionId": "soundpad-alien-starship",
+    "sectionName": "Инопланетный звездолёт",
+    "sectionIds": [
+      "soundpad-alien-starship"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787780730501-ebe3d34d-alien-egg.jpg",
+    "editedAt": "2026-08-26T21:45:31.373Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hbGllbi1zdGFyc2hpcC1BbGllbl9TdGFyc2hpcC1lZ2dfaGF0Y2gyLm9nZw": {
+    "title": "Вылупление 2",
+    "type": "sound",
+    "sectionId": "soundpad-alien-starship",
+    "sectionName": "Инопланетный звездолёт",
+    "sectionIds": [
+      "soundpad-alien-starship"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787780730501-ebe3d34d-alien-egg.jpg",
+    "editedAt": "2026-08-26T21:45:44.870Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hbGllbi1zdGFyc2hpcC1BbGllbl9TdGFyc2hpcC1lZ2dfaGF0Y2gzLm9nZw": {
+    "title": "Вылупление 3",
+    "type": "sound",
+    "sectionId": "soundpad-alien-starship",
+    "sectionName": "Инопланетный звездолёт",
+    "sectionIds": [
+      "soundpad-alien-starship"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787780730501-ebe3d34d-alien-egg.jpg",
+    "editedAt": "2026-08-26T21:45:52.206Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hbGllbi1zdGFyc2hpcC1BbGllbl9TdGFyc2hpcC1lZ2dfaGF0Y2g0Lm9nZw": {
+    "title": "Вылупление 4",
+    "type": "sound",
+    "sectionId": "soundpad-alien-starship",
+    "sectionName": "Инопланетный звездолёт",
+    "sectionIds": [
+      "soundpad-alien-starship"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787780730501-ebe3d34d-alien-egg.jpg",
+    "editedAt": "2026-08-26T21:46:00.638Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hbGllbi1zdGFyc2hpcC1BbGllbl9TdGFyc2hpcC1nbGl0Y2hfdG9uZV9sb29wLm9nZw": {
+    "title": "Глитч-тон фон",
+    "type": "sound",
+    "sectionId": "soundpad-alien-starship",
+    "sectionName": "Инопланетный звездолёт",
+    "sectionIds": [
+      "soundpad-alien-starship"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787780810638-383811d2-f16f565a1a432e02f76087379550046a.jpg",
+    "editedAt": "2026-08-26T21:46:51.119Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hbGllbi1zdGFyc2hpcC1BbGllbl9TdGFyc2hpcC1tYWNoaW5lX2h1bV9sb29wLm9nZw": {
+    "title": "Гул машины фон",
+    "type": "sound",
+    "sectionId": "soundpad-alien-starship",
+    "sectionName": "Инопланетный звездолёт",
+    "sectionIds": [
+      "soundpad-alien-starship"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787780923659-d7d51e68-d69a3757139045.59ca5e7004022.jpg",
+    "editedAt": "2026-08-26T21:48:44.556Z"
+  },
+  "dXBsb2FkOnNvdW5kcy9zb3VuZHBhZC1hbGllbi1zdGFyc2hpcC1BbGllbl9TdGFyc2hpcC1tb3Rpb25fdHJhY2tlcl9sb29wLm9nZw": {
+    "title": "Датчик движения",
+    "type": "sound",
+    "sectionId": "soundpad-alien-starship",
+    "sectionName": "Инопланетный звездолёт",
+    "sectionIds": [
+      "soundpad-alien-starship"
+    ],
+    "themeId": null,
+    "image": "uploads/images/1787780979739-29ca8e10-jack-perry-ai-tracker-thumb.jpg",
+    "editedAt": "2026-08-26T21:49:40.393Z"
   }
 }
